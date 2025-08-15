@@ -1,0 +1,85 @@
+name: "Setup CIntent"
+description: "Set up your GitHub Actions workflow for CIntent."
+author: "Javid Ditty"
+branding:
+  icon: "eye"
+  color: "orange"
+runs:
+  using: "composite"
+  steps:
+    - name: Set Environmental Variables on Linux
+      if: ${{ runner.os == 'Linux' }}
+      shell: bash
+      run: |
+        CINTENT_ARTIFACT_NAME="cintent_log"
+        echo "CINTENT_ARTIFACT_NAME=$CINTENT_ARTIFACT_NAME" >> $GITHUB_ENV
+        
+        CINTENT_BASH=/home/runner/cintent/bin/bash
+        echo "CINTENT_BASH=$CINTENT_BASH" >> $GITHUB_ENV
+        
+        CINTENT_BIN=/home/runner/cintent/bin
+        echo "CINTENT_BIN=$CINTENT_BIN" >> $GITHUB_ENV
+        mkdir -p $CINTENT_BIN
+        
+        CINTENT_LOGS=/home/runner/cintent/log
+        echo "CINTENT_LOGS=$CINTENT_LOGS" >> $GITHUB_ENV
+        mkdir -p $CINTENT_LOGS
+
+        CINTENT_STEP_ID=0
+        echo "CINTENT_STEP_ID=$CINTENT_STEP_ID" >> $GITHUB_ENV
+
+    - name: Apply Bash Wrapper on Linux
+      if: ${{ runner.os == 'Linux' }}
+      shell: bash
+      run: |
+        cat << 'BASH_WRAPPER_EOF' > ${{ env.CINTENT_BASH }}
+        #!/bin/bash
+        if [[ -z "${CINTENT_IS_TRACING_RUN}" ]]; then
+            export CINTENT_IS_TRACING_RUN=true
+            timestamp=$(date +%s%N)
+
+            metadata_log=$CINTENT_LOGS/metadata.$timestamp
+            CINTENT_STEP_ID=$(($CINTENT_STEP_ID+1))
+            echo "CINTENT_STEP_ID=$CINTENT_STEP_ID" >> $GITHUB_ENV
+            echo -en \
+            "repository = $GITHUB_REPOSITORY\n"\
+            "branch = $GITHUB_REF_NAME\n"\
+            "workflow = ${GITHUB_WORKFLOW_REF%@*}\n"\
+            "run_number = $GITHUB_RUN_NUMBER\n"\
+            "run_attempt = $GITHUB_RUN_ATTEMPT\n"\
+            "workspace = $GITHUB_WORKSPACE\n"\
+            "job_id = $GITHUB_JOB\n"\
+            "step_id = $CINTENT_STEP_ID\n"\
+            > $metadata_log
+            sed -i 's/^[ ]*//' $metadata_log
+
+            execsnoop_log=$CINTENT_LOGS/execsnoop.$timestamp
+            start_time=$SECONDS
+            timeout_time=60
+            sudo execsnoop-bpfcc -qx >> $execsnoop_log 2> /dev/null &
+            until [ -s "$execsnoop_log" ] || (( SECONDS - start_time >= timeout_time )); do
+              sleep 1
+            done
+            if [ ! -s "$execsnoop_log" ]; then
+              echo "execsnoop failed to start!" 1>&2
+              exit 1
+            fi
+
+            strace_log=$CINTENT_LOGS/strace.$timestamp
+            sudo strace \
+              -e decode-fds=path \
+              -e trace=execve,execveat,read,readlink,readlinkat,readv,preadv,preadv2,write,writev,pwritev,pwritev2 \
+              -ff \
+              -o $strace_log \
+              -qqq \
+              -tt \
+              -u runner \
+              -Y \
+              -z \
+              /bin/bash "$@"
+        else
+          /bin/bash "$@"
+        fi
+        BASH_WRAPPER_EOF
+        chmod +x ${{ env.CINTENT_BASH }}
+        echo ${{ env.CINTENT_BIN }} >> $GITHUB_PATH
