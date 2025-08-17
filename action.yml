@@ -40,9 +40,9 @@ runs:
 
           # Define the log paths
           timestamp=$(date +%s%N)
-          metadata_log=$CINTENT_LOGS/metadata.$timestamp
-          execsnoop_log=$CINTENT_LOGS/execsnoop.$timestamp
-          strace_log=$CINTENT_LOGS/strace.$timestamp
+          metadata_log=$CINTENT_LOGS/$timestamp.metadata
+          execsnoop_log=$CINTENT_LOGS/$timestamp.execsnoop
+          strace_log=$CINTENT_LOGS/$timestamp.strace
           
           # Create the metadata log
           CINTENT_STEP_ID=$((CINTENT_STEP_ID+1))
