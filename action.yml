@@ -60,7 +60,7 @@ runs:
           sed -i 's/^[ ]*//' "$metadata_log"
           
           # Start execsnoop and pipe its output to the execsnoop log
-          sudo execsnoop-bpfcc -qx | sudo tee -a "$execsnoop_log" 2> /dev/null &
+          sudo execsnoop-bpfcc -qx >> "$execsnoop_log" 2> /dev/null &
 
           # Wait for execsnoop to start tracing (or timeout)
           timeout_time=60
