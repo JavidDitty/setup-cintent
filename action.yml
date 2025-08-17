@@ -34,51 +34,88 @@ runs:
       run: |
         cat << 'BASH_WRAPPER_EOF' > ${{ env.CINTENT_BASH }}
         #!/bin/bash
+
         if [[ -z "${CINTENT_IS_TRACING_RUN}" ]]; then
-            export CINTENT_IS_TRACING_RUN=true
-            timestamp=$(date +%s%N)
+          export CINTENT_IS_TRACING_RUN=true
 
-            metadata_log=$CINTENT_LOGS/metadata.$timestamp
-            CINTENT_STEP_ID=$(($CINTENT_STEP_ID+1))
-            echo "CINTENT_STEP_ID=$CINTENT_STEP_ID" >> $GITHUB_ENV
-            echo -en \
-            "repository = $GITHUB_REPOSITORY\n"\
-            "branch = $GITHUB_REF_NAME\n"\
-            "workflow = ${GITHUB_WORKFLOW_REF%@*}\n"\
-            "run_number = $GITHUB_RUN_NUMBER\n"\
-            "run_attempt = $GITHUB_RUN_ATTEMPT\n"\
-            "workspace = $GITHUB_WORKSPACE\n"\
-            "job_id = $GITHUB_JOB\n"\
-            "step_id = $CINTENT_STEP_ID\n"\
-            > $metadata_log
-            sed -i 's/^[ ]*//' $metadata_log
+          # Define the log paths
+          timestamp=$(date +%s%N)
+          metadata_log=$CINTENT_LOGS/metadata.$timestamp
+          execsnoop_log=$CINTENT_LOGS/execsnoop.$timestamp
+          strace_log=$CINTENT_LOGS/strace.$timestamp
+          
+          # Create the metadata log
+          CINTENT_STEP_ID=$((CINTENT_STEP_ID+1))
+          echo "CINTENT_STEP_ID=$CINTENT_STEP_ID" >> "$GITHUB_ENV"
+          echo -en \
+          "repository = $GITHUB_REPOSITORY\n"\
+          "branch = $GITHUB_REF_NAME\n"\
+          "workflow = ${GITHUB_WORKFLOW_REF%@*}\n"\
+          "run_number = $GITHUB_RUN_NUMBER\n"\
+          "run_attempt = $GITHUB_RUN_ATTEMPT\n"\
+          "workspace = $GITHUB_WORKSPACE\n"\
+          "job_id = $GITHUB_JOB\n"\
+          "step_id = $CINTENT_STEP_ID\n"\
+          > "$metadata_log"
+          sed -i 's/^[ ]*//' "$metadata_log"
+          
+          # Start execsnoop and pipe its output to the execsnoop log
+          sudo execsnoop-bpfcc -qx | sudo tee -a "$execsnoop_log" 2> /dev/null &
 
-            execsnoop_log=$CINTENT_LOGS/execsnoop.$timestamp
-            start_time=$SECONDS
-            timeout_time=60
-            sudo execsnoop-bpfcc -qx >> $execsnoop_log 2> /dev/null &
-            until [ -s "$execsnoop_log" ] || (( SECONDS - start_time >= timeout_time )); do
-              sleep 1
-            done
-            if [ ! -s "$execsnoop_log" ]; then
-              echo "execsnoop failed to start!" 1>&2
-              exit 1
-            fi
+          # Wait for execsnoop to start tracing (or timeout)
+          timeout_time=60
+          start_time=$SECONDS
+          current_time=$((SECONDS - start_time))
+          until [[ -s "$execsnoop_log" || "$current_time" -gt "$timeout_time" ]]; do
+            sleep 1
+            current_time=$((SECONDS - start_time))
+          done
+          if [[ ! -s "$execsnoop_log" ]]; then
+            echo "execsnoop failed to start!" 1>&2
+            exit 1
+          fi
 
-            strace_log=$CINTENT_LOGS/strace.$timestamp
-            sudo strace \
-              -e decode-fds=path \
-              -e trace=execve,execveat,read,readlink,readlinkat,readv,preadv,preadv2,write,writev,pwritev,pwritev2 \
-              -ff \
-              -o $strace_log \
-              -qqq \
-              -tt \
-              -u runner \
-              -Y \
-              -z \
-              /bin/bash "$@"
-        else
+          # Start the run in a suspended state
+          ( 
+          kill -SIGSTOP $BASHPID
+          exec /bin/bash "$@"
+          ) &
+          run_pid=$!
+
+          # Start strace and output its entries to the strace log
+          (
+          sudo strace \
+          -e decode-fds=path \
+          -e trace=execve,execveat,read,readlink,readlinkat,readv,preadv,preadv2,write,writev,pwritev,pwritev2 \
+          -f \
+          -o "$strace_log" \
+          -p $run_pid \
+          -qqq \
+          -ttt \
+          -z \
           /bin/bash "$@"
+          ) &
+
+          # Wait for strace to start tracing (or timeout)
+          timeout_time=60
+          start_time=$SECONDS
+          current_time=$((SECONDS - start_time))
+          tracer_pid=$(cat /proc/$run_pid/status | grep -oP "(?<=TracerPid:).*")
+          until [[ "$tracer_pid" -ne 0 || "$current_time" -gt "$timeout_time" ]]; do
+            sleep 1
+            current_time=$((SECONDS - start_time))
+            tracer_pid=$(cat /proc/$run_pid/status | grep -oP "(?<=TracerPid:).*")
+          done
+          if [[ "$tracer_pid" -eq 0 ]]; then
+            echo "strace failed to start!" 1>&2
+            exit 1
+          fi
+          
+          # Resume the run and wait for it to finish
+          kill -CONT $run_pid
+          wait $run_pid
+        else
+            /bin/bash "$@"
         fi
         BASH_WRAPPER_EOF
         chmod +x ${{ env.CINTENT_BASH }}
