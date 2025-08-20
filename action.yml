@@ -32,6 +32,9 @@ runs:
       if: ${{ runner.os == 'Linux' }}
       shell: bash
       run: |
+        CINTENT_MATRIX=${{ matrix }}
+        echo "CINTENT_MATRIX=$CINTENT_MATRIX" >> $GITHUB_ENV
+        
         cat << 'BASH_WRAPPER_EOF' > ${{ env.CINTENT_BASH }}
         #!/bin/bash
 
@@ -50,11 +53,13 @@ runs:
           echo -en \
           "repository = $GITHUB_REPOSITORY\n"\
           "branch = $GITHUB_REF_NAME\n"\
+          "commit = $GITHUB_SHA\n"\
           "workflow = ${GITHUB_WORKFLOW_REF%@*}\n"\
           "run_number = $GITHUB_RUN_NUMBER\n"\
           "run_attempt = $GITHUB_RUN_ATTEMPT\n"\
           "workspace = $GITHUB_WORKSPACE\n"\
           "job_id = $GITHUB_JOB\n"\
+          "matrix = $CINTENT_MATRIX\n"\
           "step_id = $CINTENT_STEP_ID\n"\
           > "$metadata_log"
           sed -i 's/^[ ]*//' "$metadata_log"
@@ -123,7 +128,7 @@ runs:
           # Wait for the run to finish
           wait $run_pid
         else
-            /bin/bash "$@"
+          /bin/bash "$@"
         fi
         BASH_WRAPPER_EOF
         chmod +x ${{ env.CINTENT_BASH }}
