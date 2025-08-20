@@ -102,8 +102,7 @@ runs:
           -p $run_pid \
           -qqq \
           -ttt \
-          -z \
-          /bin/bash "$@"
+          -z
           ) &
 
           # Wait for strace to start tracing (or timeout)
