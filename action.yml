@@ -75,9 +75,19 @@ runs:
             exit 1
           fi
 
-          # Start the run in a suspended state
+          # Start the run (after strace attaches)
           ( 
-          kill -SIGSTOP $BASHPID
+          timeout_time=60
+          start_time=$SECONDS
+          current_time=$((SECONDS - start_time))
+          until [[ -s "$strace_log" || "$current_time" -gt "$timeout_time" ]]; do
+            sleep 1
+            current_time=$((SECONDS - start_time))
+          done
+          if [[ ! -s "$strace_log" ]]; then
+            echo "strace failed to start!" 1>&2
+            exit 1
+          fi
           exec /bin/bash "$@"
           ) &
           run_pid=$!
@@ -107,12 +117,11 @@ runs:
             tracer_pid=$(cat /proc/$run_pid/status | grep -oP "(?<=TracerPid:).*")
           done
           if [[ "$tracer_pid" -eq 0 ]]; then
-            echo "strace failed to start!" 1>&2
+            echo "run failed to start!" 1>&2
             exit 1
           fi
           
-          # Resume the run and wait for it to finish
-          kill -CONT $run_pid
+          # Wait for the run to finish
           wait $run_pid
         else
             /bin/bash "$@"
