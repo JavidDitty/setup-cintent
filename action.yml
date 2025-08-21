@@ -32,7 +32,7 @@ runs:
       if: ${{ runner.os == 'Linux' }}
       shell: bash
       run: |
-        CINTENT_MATRIX=${{ matrix }}
+        CINTENT_MATRIX="${{ toJson(matrix) }}"
         echo "CINTENT_MATRIX=$CINTENT_MATRIX" >> $GITHUB_ENV
         
         cat << 'BASH_WRAPPER_EOF' > ${{ env.CINTENT_BASH }}
