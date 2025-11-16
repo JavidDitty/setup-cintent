@@ -14,7 +14,13 @@ Set up your GitHub Actions workflow for [CIntent](https://github.com/JavidDitty/
 ```yaml
 steps:
 - uses: actions/checkout@v4
-- uses: JavidDitty/setup-cintent
+
+- name: Set up Python ${{ matrix.python-version }}
+  uses: actions/setup-python@v5
+  with:
+    python-version: ${{ matrix.python-version }}
+
+- uses: JavidDitty/setup-cintent@v1
 
 # Insert your other steps here
 

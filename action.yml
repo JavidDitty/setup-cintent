@@ -30,6 +30,9 @@ runs:
         
         CINTENT_PY3=/home/runner/cintent/bin/python3
         echo "CINTENT_PY3=$CINTENT_PY3" >> $GITHUB_ENV
+
+        CINTENT_PYTEST=/home/runner/cintent/bin/pytest
+        echo "CINTENT_PYTEST=$CINTENT_PYTEST" >> $GITHUB_ENV
         
         CINTENT_STEP_ID=0
         echo "CINTENT_STEP_ID=$CINTENT_STEP_ID" >> $GITHUB_ENV
@@ -45,25 +48,34 @@ runs:
       if: ${{ runner.os == 'Linux' }}
       shell: bash
       run: |
-        CINTENT_MATRIX="${{ toJson(matrix) }}"
+        echo "${{ toJson(matrix) }}" > matrix_context.json
+        CINTENT_MATRIX=$(cat matrix_context.json | tr -s '\n' ' ')
         echo "CINTENT_MATRIX=$CINTENT_MATRIX" >> $GITHUB_ENV
         
-        
+
+        # Create the python/python3 wrapper
         cat << 'PY_WRAPPER_EOF' > ${{ env.CINTENT_PY3 }}
         #!/bin/bash
-
-        # Define the log paths
         timestamp=$(date +%s%N)
         pyinstrument_log=$CINTENT_LOGS/$timestamp.$CINTENT_STEP_ID.pyisession.json
-
-        # Trace with pyinstrument
         pyinstrument -r pyisession -o $pyinstrument_log "$@"
         PY_WRAPPER_EOF
         cp ${{ env.CINTENT_PY3 }} ${{ env.CINTENT_PY }}
         chmod +x ${{ env.CINTENT_PY }}
         chmod +x ${{ env.CINTENT_PY3 }}
 
+
+        # Create the pytest wrapper
+        cat << 'PYTEST_WRAPPER_EOF' > ${{ env.CINTENT_PYTEST }}
+        #!/bin/bash
+        timestamp=$(date +%s%N)
+        pyinstrument_log=$CINTENT_LOGS/$timestamp.$CINTENT_STEP_ID.pyisession.json
+        pyinstrument -r pyisession -o $pyinstrument_log -m pytest "$@"
+        PYTEST_WRAPPER_EOF
+        chmod +x ${{ env.CINTENT_PYTEST }}
+
         
+        # Create the bash wrapper
         cat << 'BASH_WRAPPER_EOF' > ${{ env.CINTENT_BASH }}
         #!/bin/bash
         if [[ -z "${CINTENT_IS_TRACING_BASH}" ]]; then
