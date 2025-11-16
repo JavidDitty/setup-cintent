@@ -24,9 +24,22 @@ runs:
         CINTENT_LOGS=/home/runner/cintent/log
         echo "CINTENT_LOGS=$CINTENT_LOGS" >> $GITHUB_ENV
         mkdir -p $CINTENT_LOGS
-
+        
+        CINTENT_PY=/home/runner/cintent/bin/python
+        echo "CINTENT_PY=$CINTENT_PY" >> $GITHUB_ENV
+        
+        CINTENT_PY3=/home/runner/cintent/bin/python3
+        echo "CINTENT_PY3=$CINTENT_PY3" >> $GITHUB_ENV
+        
         CINTENT_STEP_ID=0
         echo "CINTENT_STEP_ID=$CINTENT_STEP_ID" >> $GITHUB_ENV
+
+    - name: Install Dependencies on Linux
+      if: ${{ runner.os == 'Linux' }}
+      shell: bash
+      run: |
+        sudo pip install py-spy pyinstrument
+        pip install py-spy pyinstrument
 
     - name: Apply Bash Wrapper on Linux
       if: ${{ runner.os == 'Linux' }}
@@ -35,21 +48,36 @@ runs:
         CINTENT_MATRIX="${{ toJson(matrix) }}"
         echo "CINTENT_MATRIX=$CINTENT_MATRIX" >> $GITHUB_ENV
         
-        cat << 'BASH_WRAPPER_EOF' > ${{ env.CINTENT_BASH }}
+        
+        cat << 'PY_WRAPPER_EOF' > ${{ env.CINTENT_PY3 }}
         #!/bin/bash
 
-        if [[ -z "${CINTENT_IS_TRACING_RUN}" ]]; then
-          export CINTENT_IS_TRACING_RUN=true
+        # Define the log paths
+        timestamp=$(date +%s%N)
+        pyinstrument_log=$CINTENT_LOGS/$timestamp.$CINTENT_STEP_ID.pyisession.json
 
-          # Define the log paths
-          timestamp=$(date +%s%N)
-          metadata_log=$CINTENT_LOGS/$timestamp.metadata
-          execsnoop_log=$CINTENT_LOGS/$timestamp.execsnoop
-          strace_log=$CINTENT_LOGS/$timestamp.strace
-          
-          # Create the metadata log
+        # Trace with pyinstrument
+        pyinstrument -r pyisession -o $pyinstrument_log "$@"
+        PY_WRAPPER_EOF
+        cp ${{ env.CINTENT_PY3 }} ${{ env.CINTENT_PY }}
+        chmod +x ${{ env.CINTENT_PY }}
+        chmod +x ${{ env.CINTENT_PY3 }}
+
+        
+        cat << 'BASH_WRAPPER_EOF' > ${{ env.CINTENT_BASH }}
+        #!/bin/bash
+        if [[ -z "${CINTENT_IS_TRACING_BASH}" ]]; then
+          export CINTENT_IS_TRACING_BASH=true
           CINTENT_STEP_ID=$((CINTENT_STEP_ID+1))
           echo "CINTENT_STEP_ID=$CINTENT_STEP_ID" >> "$GITHUB_ENV"
+          
+          # Define the log paths
+          timestamp=$(date +%s%N)
+          metadata_log=$CINTENT_LOGS/$timestamp.$CINTENT_STEP_ID.metadata.txt
+          execsnoop_log=$CINTENT_LOGS/$timestamp.$CINTENT_STEP_ID.execsnoop.txt
+          strace_log=$CINTENT_LOGS/$timestamp.$CINTENT_STEP_ID.strace.txt
+          
+          # Create the metadata log
           echo -en \
           "repository = $GITHUB_REPOSITORY\n"\
           "branch = $GITHUB_REF_NAME\n"\
@@ -110,7 +138,7 @@ runs:
           -z
           ) &
 
-          # Wait for strace to start tracing (or timeout)
+          # Wait for run to start (or timeout)
           timeout_time=60
           start_time=$SECONDS
           current_time=$((SECONDS - start_time))
