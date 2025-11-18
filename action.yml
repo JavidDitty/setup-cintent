@@ -13,29 +13,47 @@ runs:
       run: |
         CINTENT_ARTIFACT_NAME="cintent_log"
         echo "CINTENT_ARTIFACT_NAME=$CINTENT_ARTIFACT_NAME" >> $GITHUB_ENV
-        
+
         CINTENT_BASH=/home/runner/cintent/bin/bash
         echo "CINTENT_BASH=$CINTENT_BASH" >> $GITHUB_ENV
-        
+
         CINTENT_BIN=/home/runner/cintent/bin
         echo "CINTENT_BIN=$CINTENT_BIN" >> $GITHUB_ENV
         mkdir -p $CINTENT_BIN
-        
+
+        CINTENT_BLACK=/home/runner/cintent/bin/black
+        echo "CINTENT_BLACK=$CINTENT_BLACK" >> $GITHUB_ENV
+
+        CINTENT_FLAKE8=/home/runner/cintent/bin/flake8
+        echo "CINTENT_FLAKE8=$CINTENT_FLAKE8" >> $GITHUB_ENV
+
         CINTENT_LOGS=/home/runner/cintent/log
         echo "CINTENT_LOGS=$CINTENT_LOGS" >> $GITHUB_ENV
         mkdir -p $CINTENT_LOGS
-        
+
+        CINTENT_MYPY=/home/runner/cintent/bin/mypy
+        echo "CINTENT_MYPY=$CINTENT_MYPY" >> $GITHUB_ENV
+
         CINTENT_PY=/home/runner/cintent/bin/python
         echo "CINTENT_PY=$CINTENT_PY" >> $GITHUB_ENV
-        
+
         CINTENT_PY3=/home/runner/cintent/bin/python3
         echo "CINTENT_PY3=$CINTENT_PY3" >> $GITHUB_ENV
 
+        CINTENT_PYLINT=/home/runner/cintent/bin/pylint
+        echo "CINTENT_PYLINT=$CINTENT_PYLINT" >> $GITHUB_ENV
+
         CINTENT_PYTEST=/home/runner/cintent/bin/pytest
         echo "CINTENT_PYTEST=$CINTENT_PYTEST" >> $GITHUB_ENV
-        
+
         CINTENT_STEP_ID=0
         echo "CINTENT_STEP_ID=$CINTENT_STEP_ID" >> $GITHUB_ENV
+
+        CINTENT_TOX=/home/runner/cintent/bin/tox
+        echo "CINTENT_TOX=$CINTENT_TOX" >> $GITHUB_ENV
+
+        CINTENT_UV=/home/runner/cintent/bin/uv
+        echo "CINTENT_UV=$CINTENT_UV" >> $GITHUB_ENV
 
     - name: Install Dependencies on Linux
       if: ${{ runner.os == 'Linux' }}
@@ -44,38 +62,17 @@ runs:
         sudo pip install py-spy pyinstrument
         pip install py-spy pyinstrument
 
-    - name: Apply Bash Wrapper on Linux
+    - name: Set Command Wrappers on Linux
       if: ${{ runner.os == 'Linux' }}
       shell: bash
       run: |
+        # Save the current matrix configurations
         echo "${{ toJson(matrix) }}" > matrix_context.json
         CINTENT_MATRIX=$(cat matrix_context.json | tr -s '\n' ' ')
         echo "CINTENT_MATRIX=$CINTENT_MATRIX" >> $GITHUB_ENV
-        
-
-        # Create the python/python3 wrapper
-        cat << 'PY_WRAPPER_EOF' > ${{ env.CINTENT_PY3 }}
-        #!/bin/bash
-        timestamp=$(date +%s%N)
-        pyinstrument_log=$CINTENT_LOGS/$timestamp.$CINTENT_STEP_ID.pyisession.json
-        pyinstrument -r pyisession -o $pyinstrument_log "$@"
-        PY_WRAPPER_EOF
-        cp ${{ env.CINTENT_PY3 }} ${{ env.CINTENT_PY }}
-        chmod +x ${{ env.CINTENT_PY }}
-        chmod +x ${{ env.CINTENT_PY3 }}
 
 
-        # Create the pytest wrapper
-        cat << 'PYTEST_WRAPPER_EOF' > ${{ env.CINTENT_PYTEST }}
-        #!/bin/bash
-        timestamp=$(date +%s%N)
-        pyinstrument_log=$CINTENT_LOGS/$timestamp.$CINTENT_STEP_ID.pyisession.json
-        pyinstrument -r pyisession -o $pyinstrument_log -m pytest "$@"
-        PYTEST_WRAPPER_EOF
-        chmod +x ${{ env.CINTENT_PYTEST }}
-
-        
-        # Create the bash wrapper
+        # Create bash wrapper
         cat << 'BASH_WRAPPER_EOF' > ${{ env.CINTENT_BASH }}
         #!/bin/bash
         if [[ -z "${CINTENT_IS_TRACING_BASH}" ]]; then
@@ -173,3 +170,85 @@ runs:
         BASH_WRAPPER_EOF
         chmod +x ${{ env.CINTENT_BASH }}
         echo ${{ env.CINTENT_BIN }} >> $GITHUB_PATH
+
+
+        # Create black wrapper
+        cat << 'BLACK_WRAPPER_EOF' > ${{ env.CINTENT_BLACK }}
+        #!/bin/bash
+        timestamp=$(date +%s%N)
+        pyinstrument_log=$CINTENT_LOGS/$timestamp.$CINTENT_STEP_ID.pyisession.json
+        pyinstrument -r pyisession -o $pyinstrument_log -m black "$@"
+        BLACK_WRAPPER_EOF
+        chmod +x ${{ env.CINTENT_BLACK }}
+
+
+        # Create flake8 wrapper
+        cat << 'FLAKE8_WRAPPER_EOF' > ${{ env.CINTENT_FLAKE8 }}
+        #!/bin/bash
+        timestamp=$(date +%s%N)
+        pyinstrument_log=$CINTENT_LOGS/$timestamp.$CINTENT_STEP_ID.pyisession.json
+        pyinstrument -r pyisession -o $pyinstrument_log -m flake8 "$@"
+        FLAKE8_WRAPPER_EOF
+        chmod +x ${{ env.CINTENT_FLAKE8 }}
+
+
+        # Create mypy wrapper
+        cat << 'MYPY_WRAPPER_EOF' > ${{ env.CINTENT_MYPY }}
+        #!/bin/bash
+        timestamp=$(date +%s%N)
+        pyinstrument_log=$CINTENT_LOGS/$timestamp.$CINTENT_STEP_ID.pyisession.json
+        pyinstrument -r pyisession -o $pyinstrument_log -m mypy "$@"
+        MYPY_WRAPPER_EOF
+        chmod +x ${{ env.CINTENT_MYPY }}
+
+
+        # Create pylint wrapper
+        cat << 'PYLINT_WRAPPER_EOF' > ${{ env.CINTENT_PYLINT }}
+        #!/bin/bash
+        timestamp=$(date +%s%N)
+        pyinstrument_log=$CINTENT_LOGS/$timestamp.$CINTENT_STEP_ID.pyisession.json
+        pyinstrument -r pyisession -o $pyinstrument_log -m pylint "$@"
+        PYLINT_WRAPPER_EOF
+        chmod +x ${{ env.CINTENT_PYLINT }}
+
+
+        # Create pytest wrapper
+        cat << 'PYTEST_WRAPPER_EOF' > ${{ env.CINTENT_PYTEST }}
+        #!/bin/bash
+        timestamp=$(date +%s%N)
+        pyinstrument_log=$CINTENT_LOGS/$timestamp.$CINTENT_STEP_ID.pyisession.json
+        pyinstrument -r pyisession -o $pyinstrument_log -m pytest "$@"
+        PYTEST_WRAPPER_EOF
+        chmod +x ${{ env.CINTENT_PYTEST }}
+
+
+        # Create python/python3 wrapper
+        cat << 'PY_WRAPPER_EOF' > ${{ env.CINTENT_PY3 }}
+        #!/bin/bash
+        timestamp=$(date +%s%N)
+        pyinstrument_log=$CINTENT_LOGS/$timestamp.$CINTENT_STEP_ID.pyisession.json
+        pyinstrument -r pyisession -o $pyinstrument_log "$@"
+        PY_WRAPPER_EOF
+        cp ${{ env.CINTENT_PY3 }} ${{ env.CINTENT_PY }}
+        chmod +x ${{ env.CINTENT_PY }}
+        chmod +x ${{ env.CINTENT_PY3 }}
+
+
+        # Create tox wrapper
+        cat << 'TOX_WRAPPER_EOF' > ${{ env.CINTENT_TOX }}
+        #!/bin/bash
+        timestamp=$(date +%s%N)
+        pyinstrument_log=$CINTENT_LOGS/$timestamp.$CINTENT_STEP_ID.pyisession.json
+        pyinstrument -r pyisession -o $pyinstrument_log -m tox "$@"
+        TOX_WRAPPER_EOF
+        chmod +x ${{ env.CINTENT_TOX }}
+
+
+        # Create uv wrapper
+        cat << 'UV_WRAPPER_EOF' > ${{ env.CINTENT_UV }}
+        #!/bin/bash
+        timestamp=$(date +%s%N)
+        pyinstrument_log=$CINTENT_LOGS/$timestamp.$CINTENT_STEP_ID.pyisession.json
+        pyinstrument -r pyisession -o $pyinstrument_log -m uv "$@"
+        UV_WRAPPER_EOF
+        chmod +x ${{ env.CINTENT_UV }}
