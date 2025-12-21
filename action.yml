@@ -11,8 +11,8 @@ runs:
       if: ${{ runner.os == 'Linux' }}
       shell: bash
       run: |
-        sudo pip install black flake8 mypy py-spy pylint pytest tox uv
-        pip install black flake8 mypy py-spy pylint pytest tox uv
+        sudo pip install black flake8 mypy py-spy pylint pytest ruff tox uv
+        pip install black flake8 mypy py-spy pylint pytest ruff tox uv
 
     - name: Set Environmental Variables
       if: ${{ runner.os == 'Linux' }}
@@ -58,6 +58,9 @@ runs:
 
         CINTENT_PYTEST=/home/runner/cintent/bin/pytest
         echo "CINTENT_PYTEST=$CINTENT_PYTEST" >> $GITHUB_ENV
+
+        CINTENT_RUFF=/home/runner/cintent/bin/ruff
+        echo "CINTENT_RUFF=$CINTENT_RUFF" >> $GITHUB_ENV
 
         CINTENT_STEP_ID=0
         echo "CINTENT_STEP_ID=$CINTENT_STEP_ID" >> $GITHUB_ENV
@@ -223,6 +226,17 @@ runs:
         sudo py-spy record --format speedscope --full-filenames --function --output "$log_path" --subprocesses -- $CINTENT_PY3_BIN "$@"
         WRAPPER_EOF
         sudo chmod +x ${{ env.CINTENT_PY3 }}
+
+    - name: Write the 'ruff' Wrapper
+      if: ${{ runner.os == 'Linux' }}
+      shell: bash
+      run: |
+        cat << 'WRAPPER_EOF' > ${{ env.CINTENT_RUFF }}
+        #!/bin/bash
+        log_path="$CINTENT_LOGS/$(date +%s%N).$CINTENT_STEP_ID.pyisession.json"
+        sudo py-spy record --format speedscope --full-filenames --function --output "$log_path" --subprocesses -- python3 -m ruff "$@"
+        WRAPPER_EOF
+        sudo chmod +x ${{ env.CINTENT_RUFF }}
 
     - name: Write the 'tox' Wrapper
       if: ${{ runner.os == 'Linux' }}
