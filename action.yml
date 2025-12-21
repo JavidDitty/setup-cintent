@@ -1,5 +1,5 @@
 name: "Setup CIntent"
-description: "Set up your GitHub Actions workflow for CIntent."
+description: "Set up your GitHub Actions job for CIntent."
 author: "Javid Ditty"
 branding:
   icon: "eye"
@@ -7,7 +7,14 @@ branding:
 runs:
   using: "composite"
   steps:
-    - name: Set Environmental Variables on Linux
+    - name: Install Dependencies
+      if: ${{ runner.os == 'Linux' }}
+      shell: bash
+      run: |
+        sudo pip install black flake8 mypy py-spy pylint pytest tox
+        pip install black flake8 mypy py-spy pylint pytest tox
+
+    - name: Set Environmental Variables
       if: ${{ runner.os == 'Linux' }}
       shell: bash
       run: |
@@ -37,8 +44,14 @@ runs:
         CINTENT_PY=/home/runner/cintent/bin/python
         echo "CINTENT_PY=$CINTENT_PY" >> $GITHUB_ENV
 
+        CINTENT_PY_BIN=$(which python)
+        echo "CINTENT_PY_BIN=$CINTENT_PY_BIN" >> $GITHUB_ENV
+
         CINTENT_PY3=/home/runner/cintent/bin/python3
         echo "CINTENT_PY3=$CINTENT_PY3" >> $GITHUB_ENV
+
+        CINTENT_PY3_BIN=$(which python3)
+        echo "CINTENT_PY3_BIN=$CINTENT_PY3_BIN" >> $GITHUB_ENV
 
         CINTENT_PYLINT=/home/runner/cintent/bin/pylint
         echo "CINTENT_PYLINT=$CINTENT_PYLINT" >> $GITHUB_ENV
@@ -49,20 +62,17 @@ runs:
         CINTENT_STEP_ID=0
         echo "CINTENT_STEP_ID=$CINTENT_STEP_ID" >> $GITHUB_ENV
 
+        CINTENT_TEMP=/home/runner/cintent/temp
+        echo "CINTENT_TEMP=$CINTENT_TEMP" >> $GITHUB_ENV
+        mkdir -p $CINTENT_TEMP
+
         CINTENT_TOX=/home/runner/cintent/bin/tox
         echo "CINTENT_TOX=$CINTENT_TOX" >> $GITHUB_ENV
 
         CINTENT_UV=/home/runner/cintent/bin/uv
         echo "CINTENT_UV=$CINTENT_UV" >> $GITHUB_ENV
 
-    - name: Install Dependencies on Linux
-      if: ${{ runner.os == 'Linux' }}
-      shell: bash
-      run: |
-        sudo pip install py-spy pyinstrument
-        pip install py-spy pyinstrument
-
-    - name: Set Command Wrappers on Linux
+    - name: Write the 'bash' Wrapper
       if: ${{ runner.os == 'Linux' }}
       shell: bash
       run: |
@@ -71,12 +81,12 @@ runs:
         CINTENT_MATRIX=$(cat matrix_context.json | tr -s '\n' ' ')
         echo "CINTENT_MATRIX=$CINTENT_MATRIX" >> $GITHUB_ENV
 
-
-        # Create bash wrapper
-        cat << 'BASH_WRAPPER_EOF' > ${{ env.CINTENT_BASH }}
+        # Write the bash wrapper
+        cat << 'WRAPPER_EOF' > ${{ env.CINTENT_BASH }}
         #!/bin/bash
         if [[ -z "${CINTENT_IS_TRACING_BASH}" ]]; then
           export CINTENT_IS_TRACING_BASH=true
+          echo "CINTENT_IS_TRACING_BASH=$CINTENT_IS_TRACING_BASH" >> $GITHUB_ENV
           CINTENT_STEP_ID=$((CINTENT_STEP_ID+1))
           echo "CINTENT_STEP_ID=$CINTENT_STEP_ID" >> "$GITHUB_ENV"
           
@@ -84,7 +94,7 @@ runs:
           timestamp=$(date +%s%N)
           metadata_log=$CINTENT_LOGS/$timestamp.$CINTENT_STEP_ID.metadata.txt
           execsnoop_log=$CINTENT_LOGS/$timestamp.$CINTENT_STEP_ID.execsnoop.txt
-          strace_log=$CINTENT_LOGS/$timestamp.$CINTENT_STEP_ID.strace.txt
+          opensnoop_log=$CINTENT_LOGS/$timestamp.$CINTENT_STEP_ID.opensnoop.txt
           
           # Create the metadata log
           echo -en \
@@ -100,155 +110,133 @@ runs:
           "step_id = $CINTENT_STEP_ID\n"\
           > "$metadata_log"
           sed -i 's/^[ ]*//' "$metadata_log"
-          
-          # Start execsnoop and pipe its output to the execsnoop log
-          sudo execsnoop-bpfcc -qx >> "$execsnoop_log" 2> /dev/null &
 
-          # Wait for execsnoop to start tracing (or timeout)
+          # Start snooping tools and pipe their outputs to their logs
+          sudo execsnoop-bpfcc -qtx > "$execsnoop_log" 2> /dev/null &
+          sudo opensnoop-bpfcc -eT -n python > "$opensnoop_log" 2> /dev/null &
+      
+          # Wait for snooping tools to start tracing (or timeout)
           timeout_time=60
           start_time=$SECONDS
           current_time=$((SECONDS - start_time))
-          until [[ -s "$execsnoop_log" || "$current_time" -gt "$timeout_time" ]]; do
+
+          execsnoop_search="TIME(s)\s+PCOMM\s+PID\s+PPID\s+RET\s+ARGS"
+          opensnoop_search="TIME(s)\s+PID\s+COMM\s+FD\s+ERR\s+FLAGS\s+PATH"
+          until grep -q "$execsnoop_search" "$execsnoop_log" && grep -q "$opensnoop_search" "$opensnoop_log" || [[ "$current_time" -gt "$timeout_time" ]]; do
             sleep 1
             current_time=$((SECONDS - start_time))
           done
-          if [[ ! -s "$execsnoop_log" ]]; then
+          if grep -q "$execsnoop_search" "$execsnoop_log"; then
             echo "execsnoop failed to start!" 1>&2
             exit 1
           fi
-
-          # Start the run (after strace attaches)
-          ( 
-          timeout_time=60
-          start_time=$SECONDS
-          current_time=$((SECONDS - start_time))
-          until [[ -s "$strace_log" || "$current_time" -gt "$timeout_time" ]]; do
-            sleep 1
-            current_time=$((SECONDS - start_time))
-          done
-          if [[ ! -s "$strace_log" ]]; then
-            echo "strace failed to start!" 1>&2
+          if grep -q "$opensnoop_search" "$opensnoop_log"; then
+            echo "opensnoop failed to start!" 1>&2
             exit 1
           fi
-          exec /bin/bash "$@"
-          ) &
-          run_pid=$!
 
-          # Start strace and output its entries to the strace log
-          (
-          sudo strace \
-          -e decode-fds=path \
-          -e trace=execve,execveat,read,readlink,readlinkat,readv,preadv,preadv2,write,writev,pwritev,pwritev2 \
-          -f \
-          -o "$strace_log" \
-          -p $run_pid \
-          -qqq \
-          -ttt \
-          -z
-          ) &
-
-          # Wait for run to start (or timeout)
-          timeout_time=60
-          start_time=$SECONDS
-          current_time=$((SECONDS - start_time))
-          tracer_pid=$(cat /proc/$run_pid/status | grep -oP "(?<=TracerPid:).*")
-          until [[ "$tracer_pid" -ne 0 || "$current_time" -gt "$timeout_time" ]]; do
-            sleep 1
-            current_time=$((SECONDS - start_time))
-            tracer_pid=$(cat /proc/$run_pid/status | grep -oP "(?<=TracerPid:).*")
-          done
-          if [[ "$tracer_pid" -eq 0 ]]; then
-            echo "run failed to start!" 1>&2
-            exit 1
-          fi
-          
-          # Wait for the run to finish
-          wait $run_pid
+          # Start the bash script
+          echo "start_time = $(date +%s)" >> $metadata_log
+          /bin/bash "$@"
+          echo "end_time = $(date +%s)" >> $metadata_log
+          unset CINTENT_IS_TRACING_BASH
+          echo "CINTENT_IS_TRACING_BASH=" >> $GITHUB_ENV
         else
           /bin/bash "$@"
         fi
-        BASH_WRAPPER_EOF
+        WRAPPER_EOF
         chmod +x ${{ env.CINTENT_BASH }}
+
+    - name: Write the 'black' Wrapper
+      if: ${{ runner.os == 'Linux' }}
+      shell: bash
+      run: |
+        cat << 'WRAPPER_EOF' > ${{ env.CINTENT_BLACK }}
+        #!/bin/bash
+        log_path="$CINTENT_LOGS/$(date +%s%N).black.$CINTENT_STEP_ID.pyisession.json"
+        sudo py-spy record --format speedscope --full-filenames --function --output "$log_path" --subprocesses -- python3 -m black "$@"
+        WRAPPER_EOF
+        sudo chmod +x ${{ env.CINTENT_BLACK }}
+
+    - name: Write the 'flake8' Wrapper
+      if: ${{ runner.os == 'Linux' }}
+      shell: bash
+      run: |
+        cat << 'WRAPPER_EOF' > ${{ env.CINTENT_FLAKE8 }}
+        #!/bin/bash
+        log_path="$CINTENT_LOGS/$(date +%s%N).flake8.$CINTENT_STEP_ID.pyisession.json"
+        sudo py-spy record --format speedscope --full-filenames --function --output "$log_path" --subprocesses -- python3 -m flake8 "$@"
+        WRAPPER_EOF
+        sudo chmod +x ${{ env.CINTENT_FLAKE8 }}
+
+    - name: Write the 'mypy' Wrapper
+      if: ${{ runner.os == 'Linux' }}
+      shell: bash
+      run: |
+        cat << 'WRAPPER_EOF' > ${{ env.CINTENT_MYPY }}
+        #!/bin/bash
+        log_path="$CINTENT_LOGS/$(date +%s%N).mypy.$CINTENT_STEP_ID.pyisession.json"
+        sudo py-spy record --format speedscope --full-filenames --function --output "$log_path" --subprocesses -- python3 -m mypy "$@"
+        WRAPPER_EOF
+        sudo chmod +x ${{ env.CINTENT_MYPY }}
+
+    - name: Write the 'pylint' Wrapper
+      if: ${{ runner.os == 'Linux' }}
+      shell: bash
+      run: |
+        cat << 'WRAPPER_EOF' > ${{ env.CINTENT_PYLINT }}
+        #!/bin/bash
+        log_path="$CINTENT_LOGS/$(date +%s%N).pylint.$CINTENT_STEP_ID.pyisession.json"
+        sudo py-spy record --format speedscope --full-filenames --function --output "$log_path" --subprocesses -- python3 -m pylint "$@"
+        WRAPPER_EOF
+        sudo chmod +x ${{ env.CINTENT_PYLINT }}
+
+    - name: Write the 'pytest' Wrapper
+      if: ${{ runner.os == 'Linux' }}
+      shell: bash
+      run: |
+        cat << 'WRAPPER_EOF' > ${{ env.CINTENT_PYTEST }}
+        #!/bin/bash
+        log_path="$CINTENT_LOGS/$(date +%s%N).pytest.$CINTENT_STEP_ID.pyisession.json"
+        sudo py-spy record --format speedscope --full-filenames --function --output "$log_path" --subprocesses -- python3 -m pytest "$@"
+        WRAPPER_EOF
+        sudo chmod +x ${{ env.CINTENT_PYTEST }}
+
+    - name: Write the 'python' Wrapper
+      if: ${{ runner.os == 'Linux' }}
+      shell: bash
+      run: |
+        cat << 'WRAPPER_EOF' > ${{ env.CINTENT_PY }}
+        #!/bin/bash
+        log_path="$CINTENT_LOGS/$(date +%s%N).python.$CINTENT_STEP_ID.pyisession.json"
+        sudo py-spy record --format speedscope --full-filenames --function --output "$log_path" --subprocesses -- $CINTENT_PY_BIN "$@"
+        WRAPPER_EOF
+        sudo chmod +x ${{ env.CINTENT_PY }}
+
+    - name: Write the 'python3' Wrapper
+      if: ${{ runner.os == 'Linux' }}
+      shell: bash
+      run: |
+        cat << 'WRAPPER_EOF' > ${{ env.CINTENT_PY3 }}
+        #!/bin/bash
+        log_path="$CINTENT_LOGS/$(date +%s%N).python3.$CINTENT_STEP_ID.pyisession.json"
+        sudo py-spy record --format speedscope --full-filenames --function --output "$log_path" --subprocesses -- $CINTENT_PY3_BIN "$@"
+        WRAPPER_EOF
+        sudo chmod +x ${{ env.CINTENT_PY3 }}
+
+    - name: Write the 'tox' Wrapper
+      if: ${{ runner.os == 'Linux' }}
+      shell: bash
+      run: |
+        cat << 'WRAPPER_EOF' > ${{ env.CINTENT_TOX }}
+        #!/bin/bash
+        log_path="$CINTENT_LOGS/$(date +%s%N).tox.$CINTENT_STEP_ID.pyisession.json"
+        sudo py-spy record --format speedscope --full-filenames --function --output "$log_path" --subprocesses -- python3 -m tox "$@"
+        WRAPPER_EOF
+        sudo chmod +x ${{ env.CINTENT_TOX }}
+
+    - name: Write the 'python3' Wrapper
+      if: ${{ runner.os == 'Linux' }}
+      shell: bash
+      run: |
         echo ${{ env.CINTENT_BIN }} >> $GITHUB_PATH
-
-
-        # Create black wrapper
-        cat << 'BLACK_WRAPPER_EOF' > ${{ env.CINTENT_BLACK }}
-        #!/bin/bash
-        timestamp=$(date +%s%N)
-        pyinstrument_log=$CINTENT_LOGS/$timestamp.$CINTENT_STEP_ID.pyisession.json
-        pyinstrument -r pyisession -o $pyinstrument_log -m black "$@"
-        BLACK_WRAPPER_EOF
-        chmod +x ${{ env.CINTENT_BLACK }}
-
-
-        # Create flake8 wrapper
-        cat << 'FLAKE8_WRAPPER_EOF' > ${{ env.CINTENT_FLAKE8 }}
-        #!/bin/bash
-        timestamp=$(date +%s%N)
-        pyinstrument_log=$CINTENT_LOGS/$timestamp.$CINTENT_STEP_ID.pyisession.json
-        pyinstrument -r pyisession -o $pyinstrument_log -m flake8 "$@"
-        FLAKE8_WRAPPER_EOF
-        chmod +x ${{ env.CINTENT_FLAKE8 }}
-
-
-        # Create mypy wrapper
-        cat << 'MYPY_WRAPPER_EOF' > ${{ env.CINTENT_MYPY }}
-        #!/bin/bash
-        timestamp=$(date +%s%N)
-        pyinstrument_log=$CINTENT_LOGS/$timestamp.$CINTENT_STEP_ID.pyisession.json
-        pyinstrument -r pyisession -o $pyinstrument_log -m mypy "$@"
-        MYPY_WRAPPER_EOF
-        chmod +x ${{ env.CINTENT_MYPY }}
-
-
-        # Create pylint wrapper
-        cat << 'PYLINT_WRAPPER_EOF' > ${{ env.CINTENT_PYLINT }}
-        #!/bin/bash
-        timestamp=$(date +%s%N)
-        pyinstrument_log=$CINTENT_LOGS/$timestamp.$CINTENT_STEP_ID.pyisession.json
-        pyinstrument -r pyisession -o $pyinstrument_log -m pylint "$@"
-        PYLINT_WRAPPER_EOF
-        chmod +x ${{ env.CINTENT_PYLINT }}
-
-
-        # Create pytest wrapper
-        cat << 'PYTEST_WRAPPER_EOF' > ${{ env.CINTENT_PYTEST }}
-        #!/bin/bash
-        timestamp=$(date +%s%N)
-        pyinstrument_log=$CINTENT_LOGS/$timestamp.$CINTENT_STEP_ID.pyisession.json
-        pyinstrument -r pyisession -o $pyinstrument_log -m pytest "$@"
-        PYTEST_WRAPPER_EOF
-        chmod +x ${{ env.CINTENT_PYTEST }}
-
-
-        # Create python/python3 wrapper
-        cat << 'PY_WRAPPER_EOF' > ${{ env.CINTENT_PY3 }}
-        #!/bin/bash
-        timestamp=$(date +%s%N)
-        pyinstrument_log=$CINTENT_LOGS/$timestamp.$CINTENT_STEP_ID.pyisession.json
-        pyinstrument -r pyisession -o $pyinstrument_log "$@"
-        PY_WRAPPER_EOF
-        cp ${{ env.CINTENT_PY3 }} ${{ env.CINTENT_PY }}
-        chmod +x ${{ env.CINTENT_PY }}
-        chmod +x ${{ env.CINTENT_PY3 }}
-
-
-        # Create tox wrapper
-        cat << 'TOX_WRAPPER_EOF' > ${{ env.CINTENT_TOX }}
-        #!/bin/bash
-        timestamp=$(date +%s%N)
-        pyinstrument_log=$CINTENT_LOGS/$timestamp.$CINTENT_STEP_ID.pyisession.json
-        pyinstrument -r pyisession -o $pyinstrument_log -m tox "$@"
-        TOX_WRAPPER_EOF
-        chmod +x ${{ env.CINTENT_TOX }}
-
-
-        # Create uv wrapper
-        cat << 'UV_WRAPPER_EOF' > ${{ env.CINTENT_UV }}
-        #!/bin/bash
-        timestamp=$(date +%s%N)
-        pyinstrument_log=$CINTENT_LOGS/$timestamp.$CINTENT_STEP_ID.pyisession.json
-        pyinstrument -r pyisession -o $pyinstrument_log -m uv "$@"
-        UV_WRAPPER_EOF
-        chmod +x ${{ env.CINTENT_UV }}
