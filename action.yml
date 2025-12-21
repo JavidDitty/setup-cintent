@@ -11,8 +11,8 @@ runs:
       if: ${{ runner.os == 'Linux' }}
       shell: bash
       run: |
-        sudo pip install black flake8 mypy py-spy pylint pytest tox
-        pip install black flake8 mypy py-spy pylint pytest tox
+        sudo pip install black flake8 mypy py-spy pylint pytest tox uv
+        pip install black flake8 mypy py-spy pylint pytest tox uv
 
     - name: Set Environmental Variables
       if: ${{ runner.os == 'Linux' }}
@@ -153,7 +153,7 @@ runs:
       run: |
         cat << 'WRAPPER_EOF' > ${{ env.CINTENT_BLACK }}
         #!/bin/bash
-        log_path="$CINTENT_LOGS/$(date +%s%N).black.$CINTENT_STEP_ID.pyisession.json"
+        log_path="$CINTENT_LOGS/$(date +%s%N).$CINTENT_STEP_ID.pyisession.json"
         sudo py-spy record --format speedscope --full-filenames --function --output "$log_path" --subprocesses -- python3 -m black "$@"
         WRAPPER_EOF
         sudo chmod +x ${{ env.CINTENT_BLACK }}
@@ -164,7 +164,7 @@ runs:
       run: |
         cat << 'WRAPPER_EOF' > ${{ env.CINTENT_FLAKE8 }}
         #!/bin/bash
-        log_path="$CINTENT_LOGS/$(date +%s%N).flake8.$CINTENT_STEP_ID.pyisession.json"
+        log_path="$CINTENT_LOGS/$(date +%s%N).$CINTENT_STEP_ID.pyisession.json"
         sudo py-spy record --format speedscope --full-filenames --function --output "$log_path" --subprocesses -- python3 -m flake8 "$@"
         WRAPPER_EOF
         sudo chmod +x ${{ env.CINTENT_FLAKE8 }}
@@ -175,7 +175,7 @@ runs:
       run: |
         cat << 'WRAPPER_EOF' > ${{ env.CINTENT_MYPY }}
         #!/bin/bash
-        log_path="$CINTENT_LOGS/$(date +%s%N).mypy.$CINTENT_STEP_ID.pyisession.json"
+        log_path="$CINTENT_LOGS/$(date +%s%N).$CINTENT_STEP_ID.pyisession.json"
         sudo py-spy record --format speedscope --full-filenames --function --output "$log_path" --subprocesses -- python3 -m mypy "$@"
         WRAPPER_EOF
         sudo chmod +x ${{ env.CINTENT_MYPY }}
@@ -186,7 +186,7 @@ runs:
       run: |
         cat << 'WRAPPER_EOF' > ${{ env.CINTENT_PYLINT }}
         #!/bin/bash
-        log_path="$CINTENT_LOGS/$(date +%s%N).pylint.$CINTENT_STEP_ID.pyisession.json"
+        log_path="$CINTENT_LOGS/$(date +%s%N).$CINTENT_STEP_ID.pyisession.json"
         sudo py-spy record --format speedscope --full-filenames --function --output "$log_path" --subprocesses -- python3 -m pylint "$@"
         WRAPPER_EOF
         sudo chmod +x ${{ env.CINTENT_PYLINT }}
@@ -197,7 +197,7 @@ runs:
       run: |
         cat << 'WRAPPER_EOF' > ${{ env.CINTENT_PYTEST }}
         #!/bin/bash
-        log_path="$CINTENT_LOGS/$(date +%s%N).pytest.$CINTENT_STEP_ID.pyisession.json"
+        log_path="$CINTENT_LOGS/$(date +%s%N).$CINTENT_STEP_ID.pyisession.json"
         sudo py-spy record --format speedscope --full-filenames --function --output "$log_path" --subprocesses -- python3 -m pytest "$@"
         WRAPPER_EOF
         sudo chmod +x ${{ env.CINTENT_PYTEST }}
@@ -208,7 +208,7 @@ runs:
       run: |
         cat << 'WRAPPER_EOF' > ${{ env.CINTENT_PY }}
         #!/bin/bash
-        log_path="$CINTENT_LOGS/$(date +%s%N).python.$CINTENT_STEP_ID.pyisession.json"
+        log_path="$CINTENT_LOGS/$(date +%s%N).$CINTENT_STEP_ID.pyisession.json"
         sudo py-spy record --format speedscope --full-filenames --function --output "$log_path" --subprocesses -- $CINTENT_PY_BIN "$@"
         WRAPPER_EOF
         sudo chmod +x ${{ env.CINTENT_PY }}
@@ -219,7 +219,7 @@ runs:
       run: |
         cat << 'WRAPPER_EOF' > ${{ env.CINTENT_PY3 }}
         #!/bin/bash
-        log_path="$CINTENT_LOGS/$(date +%s%N).python3.$CINTENT_STEP_ID.pyisession.json"
+        log_path="$CINTENT_LOGS/$(date +%s%N).$CINTENT_STEP_ID.pyisession.json"
         sudo py-spy record --format speedscope --full-filenames --function --output "$log_path" --subprocesses -- $CINTENT_PY3_BIN "$@"
         WRAPPER_EOF
         sudo chmod +x ${{ env.CINTENT_PY3 }}
@@ -230,10 +230,21 @@ runs:
       run: |
         cat << 'WRAPPER_EOF' > ${{ env.CINTENT_TOX }}
         #!/bin/bash
-        log_path="$CINTENT_LOGS/$(date +%s%N).tox.$CINTENT_STEP_ID.pyisession.json"
+        log_path="$CINTENT_LOGS/$(date +%s%N).$CINTENT_STEP_ID.pyisession.json"
         sudo py-spy record --format speedscope --full-filenames --function --output "$log_path" --subprocesses -- python3 -m tox "$@"
         WRAPPER_EOF
         sudo chmod +x ${{ env.CINTENT_TOX }}
+
+    - name: Write the 'uv' Wrapper
+      if: ${{ runner.os == 'Linux' }}
+      shell: bash
+      run: |
+        cat << 'WRAPPER_EOF' > ${{ env.CINTENT_UV }}
+        #!/bin/bash
+        log_path="$CINTENT_LOGS/$(date +%s%N).$CINTENT_STEP_ID.pyisession.json"
+        sudo py-spy record --format speedscope --full-filenames --function --output "$log_path" --subprocesses -- python3 -m uv "$@"
+        WRAPPER_EOF
+        sudo chmod +x ${{ env.CINTENT_UV }}
 
     - name: Write the 'python3' Wrapper
       if: ${{ runner.os == 'Linux' }}
