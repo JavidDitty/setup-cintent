@@ -11,8 +11,8 @@ runs:
       if: ${{ runner.os == 'Linux' }}
       shell: bash
       run: |
-        sudo pip install py-spy
-        pip install black flake8 mypy py-spy pylint pytest ruff tox uv xdoctest
+        pip install scalene
+        pip install black flake8 mypy pylint pytest ruff tox uv xdoctest
 
     - name: Set Environmental Variables
       if: ${{ runner.os == 'Linux' }}
@@ -159,8 +159,8 @@ runs:
       run: |
         cat << 'WRAPPER_EOF' > ${{ env.CINTENT_BLACK }}
         #!/bin/bash
-        log_path="$CINTENT_LOGS/$(date +%s%N).$CINTENT_STEP_ID.pyisession.json"
-        sudo py-spy record --format speedscope --full-filenames --function --output "$log_path" --subprocesses -- python3 -m black "$@"
+        log_path="$CINTENT_LOGS/$(date +%s%N).$CINTENT_STEP_ID.scalene.json"
+        scalene run --outfile "$log_path" --cpu-only --profile-all --cpu-percent-threshold 0 --cpu-sampling-rate 0.01 --malloc-threshold 0 --stacks -m "$@"
         WRAPPER_EOF
         sudo chmod +x ${{ env.CINTENT_BLACK }}
 
@@ -170,8 +170,8 @@ runs:
       run: |
         cat << 'WRAPPER_EOF' > ${{ env.CINTENT_FLAKE8 }}
         #!/bin/bash
-        log_path="$CINTENT_LOGS/$(date +%s%N).$CINTENT_STEP_ID.pyisession.json"
-        sudo py-spy record --format speedscope --full-filenames --function --output "$log_path" --subprocesses -- python3 -m flake8 "$@"
+        log_path="$CINTENT_LOGS/$(date +%s%N).$CINTENT_STEP_ID.scalene.json"
+        scalene run --outfile "$log_path" --cpu-only --profile-all --cpu-percent-threshold 0 --cpu-sampling-rate 0.01 --malloc-threshold 0 --stacks -m "$@"
         WRAPPER_EOF
         sudo chmod +x ${{ env.CINTENT_FLAKE8 }}
 
@@ -181,8 +181,8 @@ runs:
       run: |
         cat << 'WRAPPER_EOF' > ${{ env.CINTENT_MYPY }}
         #!/bin/bash
-        log_path="$CINTENT_LOGS/$(date +%s%N).$CINTENT_STEP_ID.pyisession.json"
-        sudo py-spy record --format speedscope --full-filenames --function --output "$log_path" --subprocesses -- python3 -m mypy "$@"
+        log_path="$CINTENT_LOGS/$(date +%s%N).$CINTENT_STEP_ID.scalene.json"
+        scalene run --outfile "$log_path" --cpu-only --profile-all --cpu-percent-threshold 0 --cpu-sampling-rate 0.01 --malloc-threshold 0 --stacks -m "$@"
         WRAPPER_EOF
         sudo chmod +x ${{ env.CINTENT_MYPY }}
 
@@ -192,8 +192,8 @@ runs:
       run: |
         cat << 'WRAPPER_EOF' > ${{ env.CINTENT_PYLINT }}
         #!/bin/bash
-        log_path="$CINTENT_LOGS/$(date +%s%N).$CINTENT_STEP_ID.pyisession.json"
-        sudo py-spy record --format speedscope --full-filenames --function --output "$log_path" --subprocesses -- python3 -m pylint "$@"
+        log_path="$CINTENT_LOGS/$(date +%s%N).$CINTENT_STEP_ID.scalene.json"
+        scalene run --outfile "$log_path" --cpu-only --profile-all --cpu-percent-threshold 0 --cpu-sampling-rate 0.01 --malloc-threshold 0 --stacks -m "$@"
         WRAPPER_EOF
         sudo chmod +x ${{ env.CINTENT_PYLINT }}
 
@@ -203,8 +203,8 @@ runs:
       run: |
         cat << 'WRAPPER_EOF' > ${{ env.CINTENT_PYTEST }}
         #!/bin/bash
-        log_path="$CINTENT_LOGS/$(date +%s%N).$CINTENT_STEP_ID.pyisession.json"
-        sudo py-spy record --format speedscope --full-filenames --function --output "$log_path" --subprocesses -- python3 -m pytest "$@"
+        log_path="$CINTENT_LOGS/$(date +%s%N).$CINTENT_STEP_ID.scalene.json"
+        scalene run --outfile "$log_path" --cpu-only --profile-all --cpu-percent-threshold 0 --cpu-sampling-rate 0.01 --malloc-threshold 0 --stacks -m "$@"
         WRAPPER_EOF
         sudo chmod +x ${{ env.CINTENT_PYTEST }}
 
@@ -214,8 +214,8 @@ runs:
       run: |
         cat << 'WRAPPER_EOF' > ${{ env.CINTENT_PY }}
         #!/bin/bash
-        log_path="$CINTENT_LOGS/$(date +%s%N).$CINTENT_STEP_ID.pyisession.json"
-        sudo py-spy record --format speedscope --full-filenames --function --output "$log_path" --subprocesses -- $CINTENT_PY_BIN "$@"
+        log_path="$CINTENT_LOGS/$(date +%s%N).$CINTENT_STEP_ID.scalene.json"
+        scalene run --outfile "$log_path" --cpu-only --profile-all --cpu-percent-threshold 0 --cpu-sampling-rate 0.01 --malloc-threshold 0 --stacks "$@"
         WRAPPER_EOF
         sudo chmod +x ${{ env.CINTENT_PY }}
 
@@ -225,8 +225,8 @@ runs:
       run: |
         cat << 'WRAPPER_EOF' > ${{ env.CINTENT_PY3 }}
         #!/bin/bash
-        log_path="$CINTENT_LOGS/$(date +%s%N).$CINTENT_STEP_ID.pyisession.json"
-        sudo py-spy record --format speedscope --full-filenames --function --output "$log_path" --subprocesses -- $CINTENT_PY3_BIN "$@"
+        log_path="$CINTENT_LOGS/$(date +%s%N).$CINTENT_STEP_ID.scalene.json"
+        scalene run --outfile "$log_path" --cpu-only --profile-all --cpu-percent-threshold 0 --cpu-sampling-rate 0.01 --malloc-threshold 0 --stacks "$@"
         WRAPPER_EOF
         sudo chmod +x ${{ env.CINTENT_PY3 }}
 
@@ -236,8 +236,8 @@ runs:
       run: |
         cat << 'WRAPPER_EOF' > ${{ env.CINTENT_RUFF }}
         #!/bin/bash
-        log_path="$CINTENT_LOGS/$(date +%s%N).$CINTENT_STEP_ID.pyisession.json"
-        sudo py-spy record --format speedscope --full-filenames --function --output "$log_path" --subprocesses -- python3 -m ruff "$@"
+        log_path="$CINTENT_LOGS/$(date +%s%N).$CINTENT_STEP_ID.scalene.json"
+        scalene run --outfile "$log_path" --cpu-only --profile-all --cpu-percent-threshold 0 --cpu-sampling-rate 0.01 --malloc-threshold 0 --stacks -m "$@"
         WRAPPER_EOF
         sudo chmod +x ${{ env.CINTENT_RUFF }}
 
@@ -247,8 +247,8 @@ runs:
       run: |
         cat << 'WRAPPER_EOF' > ${{ env.CINTENT_TOX }}
         #!/bin/bash
-        log_path="$CINTENT_LOGS/$(date +%s%N).$CINTENT_STEP_ID.pyisession.json"
-        sudo py-spy record --format speedscope --full-filenames --function --output "$log_path" --subprocesses -- python3 -m tox "$@"
+        log_path="$CINTENT_LOGS/$(date +%s%N).$CINTENT_STEP_ID.scalene.json"
+        scalene run --outfile "$log_path" --cpu-only --profile-all --cpu-percent-threshold 0 --cpu-sampling-rate 0.01 --malloc-threshold 0 --stacks -m "$@"
         WRAPPER_EOF
         sudo chmod +x ${{ env.CINTENT_TOX }}
 
@@ -258,8 +258,8 @@ runs:
       run: |
         cat << 'WRAPPER_EOF' > ${{ env.CINTENT_UV }}
         #!/bin/bash
-        log_path="$CINTENT_LOGS/$(date +%s%N).$CINTENT_STEP_ID.pyisession.json"
-        sudo py-spy record --format speedscope --full-filenames --function --output "$log_path" --subprocesses -- python3 -m uv "$@"
+        log_path="$CINTENT_LOGS/$(date +%s%N).$CINTENT_STEP_ID.scalene.json"
+        scalene run --outfile "$log_path" --cpu-only --profile-all --cpu-percent-threshold 0 --cpu-sampling-rate 0.01 --malloc-threshold 0 --stacks -m "$@"
         WRAPPER_EOF
         sudo chmod +x ${{ env.CINTENT_UV }}
   
@@ -269,8 +269,8 @@ runs:
       run: |
         cat << 'WRAPPER_EOF' > ${{ env.CINTENT_XDOCTEST }}
         #!/bin/bash
-        log_path="$CINTENT_LOGS/$(date +%s%N).$CINTENT_STEP_ID.pyisession.json"
-        sudo py-spy record --format speedscope --full-filenames --function --output "$log_path" --subprocesses -- python3 -m xdoctest "$@"
+        log_path="$CINTENT_LOGS/$(date +%s%N).$CINTENT_STEP_ID.scalene.json"
+        scalene run --outfile "$log_path" --cpu-only --profile-all --cpu-percent-threshold 0 --cpu-sampling-rate 0.01 --malloc-threshold 0 --stacks -m "$@"
         WRAPPER_EOF
         sudo chmod +x ${{ env.CINTENT_XDOCTEST }}
 
