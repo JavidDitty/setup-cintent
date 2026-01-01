@@ -147,11 +147,17 @@ runs:
         cat << 'WRAPPER_EOF' > ${{ env.CINTENT_PYTHON_WRAPPER }}
         #!/bin/bash
         MODULE_ARGS=" $@"
-        MODULE_LHS=$(echo "${MODULE_ARGS%% -*}" | awk '{$1=$1}1')
-        MODULE_RHS=$(echo "-${MODULE_ARGS#* -}" | awk '{$1=$1}1')
-        log_path="$CINTENT_LOGS/$(date +%s%N).$CINTENT_STEP_ID.scalene.json"
-        pip show scalene > /dev/null 2>&1 || pip install scalene
-        scalene run --outfile "$log_path" --cpu-only --profile-all --cpu-percent-threshold 0 --cpu-sampling-rate 0.01 --malloc-threshold 0 --stacks "$MODULE_LHS" --- "$MODULE_RHS"
+        [[ ${MODULE_ARGS# -m} != "$MODULE_ARGS" ]] && MODULE_LHS=$(echo "$MODULE_ARGS" | awk '{print $1, $2}') || MODULE_LHS=$(echo "${MODULE_ARGS%% -*}" | awk '{$1=$1}1')
+        [[ ${MODULE_ARGS# -m} != "$MODULE_ARGS" ]] && MODULE_RHS=$(echo "$MODULE_ARGS" | awk '{$1=$2=""; sub(/^[ \t]+/, ""); print}') || MODULE_RHS=$(echo "-${MODULE_ARGS#* -}" | awk '{$1=$1}1')
+        MODULE_NAME=$(basename "$0")
+        if [[ ${MODULE_LHS# -m pip } != "$MODULE_LHS" ]]; then
+          LOG_PATH="$CINTENT_LOGS/$(date +%s%N).$CINTENT_STEP_ID.scalene.json"
+          pip show scalene > /dev/null 2>&1 || pip install scalene
+          scalene run --outfile "$LOG_PATH" --cpu-only --profile-all --cpu-percent-threshold 0 --cpu-sampling-rate 0.01 --malloc-threshold 0 --stacks "$MODULE_LHS" --- "$MODULE_RHS"
+        else
+          MODULE_PATH=$(which -a "$MODULE_NAME" | awk 'NR==1 {first=$0} NR>1 && $0 != first {print; exit}')
+          $MODULE_PATH ${MODULE_ARGS# }
+        fi
         WRAPPER_EOF
         sudo chmod +x ${{ env.CINTENT_PYTHON_WRAPPER }}
         sudo cp ${{ env.CINTENT_PYTHON_WRAPPER }} ${{ env.CINTENT_PYTHON }}
