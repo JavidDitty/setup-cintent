@@ -149,7 +149,7 @@ runs:
         MODULE_ARGS="$@"
         log_path="$CINTENT_LOGS/$(date +%s%N).$CINTENT_STEP_ID.scalene.json"
         pip show scalene > /dev/null 2>&1 || pip install scalene
-        scalene run --outfile "$log_path" --cpu-only --profile-all --cpu-percent-threshold 0 --cpu-sampling-rate 0.01 --malloc-threshold 0 --stacks "$MODULE_ARGS"
+        scalene run --outfile "$log_path" --cpu-only --profile-all --cpu-percent-threshold 0 --cpu-sampling-rate 0.01 --malloc-threshold 0 --stacks --- "$MODULE_ARGS"
         WRAPPER_EOF
         sudo chmod +x ${{ env.CINTENT_PYTHON_WRAPPER }}
         sudo cp ${{ env.CINTENT_PYTHON_WRAPPER }} ${{ env.CINTENT_PYTHON }}
@@ -163,10 +163,9 @@ runs:
         #!/bin/bash
         MODULE_ARGS="$@"
         MODULE_NAME=$(basename "$0")
-        MODULE_CMD=$(echo "$MODULE_NAME $MODULE_ARGS" | awk '{$1=$1};1')
         log_path="$CINTENT_LOGS/$(date +%s%N).$CINTENT_STEP_ID.scalene.json"
         pip show scalene > /dev/null 2>&1 || pip install scalene
-        scalene run --outfile "$log_path" --cpu-only --profile-all --cpu-percent-threshold 0 --cpu-sampling-rate 0.01 --malloc-threshold 0 --stacks -m "$MODULE_CMD"
+        scalene run --outfile "$log_path" --cpu-only --profile-all --cpu-percent-threshold 0 --cpu-sampling-rate 0.01 --malloc-threshold 0 --stacks -m "$MODULE_NAME" --- "$MODULE_ARGS"
         WRAPPER_EOF
         sudo chmod +x ${{ env.CINTENT_MODULE_WRAPPER }}
         while read -r module; do
