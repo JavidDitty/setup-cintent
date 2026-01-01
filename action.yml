@@ -7,13 +7,6 @@ branding:
 runs:
   using: "composite"
   steps:
-    - name: Install Dependencies
-      if: ${{ runner.os == 'Linux' }}
-      shell: bash
-      run: |
-        pip install scalene
-        pip install black flake8 mypy pylint pytest ruff tox uv xdoctest
-
     - name: Set Environmental Variables
       if: ${{ runner.os == 'Linux' }}
       shell: bash
@@ -38,20 +31,26 @@ runs:
         echo "CINTENT_LOGS=$CINTENT_LOGS" >> $GITHUB_ENV
         mkdir -p $CINTENT_LOGS
 
+        CINTENT_MODULE_WRAPPER=/home/runner/cintent/temp/module_wrapper
+        echo "CINTENT_MODULE_WRAPPER=$CINTENT_MODULE_WRAPPER" >> $GITHUB_ENV
+
         CINTENT_MYPY=/home/runner/cintent/bin/mypy
         echo "CINTENT_MYPY=$CINTENT_MYPY" >> $GITHUB_ENV
 
-        CINTENT_PY=/home/runner/cintent/bin/python
-        echo "CINTENT_PY=$CINTENT_PY" >> $GITHUB_ENV
+        CINTENT_NOX=/home/runner/cintent/bin/nox
+        echo "CINTENT_NOX=$CINTENT_NOX" >> $GITHUB_ENV
 
-        CINTENT_PY_BIN=$(which python)
-        echo "CINTENT_PY_BIN=$CINTENT_PY_BIN" >> $GITHUB_ENV
+        CINTENT_POETRY=/home/runner/cintent/bin/poetry
+        echo "CINTENT_POETRY=$CINTENT_POETRY" >> $GITHUB_ENV
 
-        CINTENT_PY3=/home/runner/cintent/bin/python3
-        echo "CINTENT_PY3=$CINTENT_PY3" >> $GITHUB_ENV
+        CINTENT_PYTHON=/home/runner/cintent/bin/python
+        echo "CINTENT_PYTHON=$CINTENT_PYTHON" >> $GITHUB_ENV
 
-        CINTENT_PY3_BIN=$(which python3)
-        echo "CINTENT_PY3_BIN=$CINTENT_PY3_BIN" >> $GITHUB_ENV
+        CINTENT_PYTHON_WRAPPER=/home/runner/cintent/temp/python_wrapper
+        echo "CINTENT_PYTHON_WRAPPER=$CINTENT_PYTHON_WRAPPER" >> $GITHUB_ENV
+
+        CINTENT_PYTHON3=/home/runner/cintent/bin/python3
+        echo "CINTENT_PYTHON3=$CINTENT_PYTHON3" >> $GITHUB_ENV
 
         CINTENT_PYLINT=/home/runner/cintent/bin/pylint
         echo "CINTENT_PYLINT=$CINTENT_PYLINT" >> $GITHUB_ENV
@@ -78,7 +77,7 @@ runs:
         CINTENT_XDOCTEST=/home/runner/cintent/bin/xdoctest
         echo "CINTENT_XDOCTEST=$CINTENT_XDOCTEST" >> $GITHUB_ENV
 
-    - name: Write the 'bash' Wrapper
+    - name: Write Bash Wrappers
       if: ${{ runner.os == 'Linux' }}
       shell: bash
       run: |
@@ -91,8 +90,11 @@ runs:
         cat << 'WRAPPER_EOF' > ${{ env.CINTENT_BASH }}
         #!/bin/bash
         if [[ -z "${CINTENT_IS_TRACING_BASH}" ]]; then
+          # Set tracer indicator
           export CINTENT_IS_TRACING_BASH=true
           echo "CINTENT_IS_TRACING_BASH=$CINTENT_IS_TRACING_BASH" >> $GITHUB_ENV
+
+          # Increment the step id
           CINTENT_STEP_ID=$((CINTENT_STEP_ID+1))
           echo "CINTENT_STEP_ID=$CINTENT_STEP_ID" >> "$GITHUB_ENV"
           
@@ -125,7 +127,6 @@ runs:
           timeout_time=60
           start_time=$SECONDS
           current_time=$((SECONDS - start_time))
-
           execsnoop_search="TIME(s)\s+PCOMM\s+PID\s+PPID\s+RET\s+ARGS"
           opensnoop_search="TIME(s)\s+PID\s+COMM\s+FD\s+ERR\s+FLAGS\s+PATH"
           until grep -q "$execsnoop_search" "$execsnoop_log" && grep -q "$opensnoop_search" "$opensnoop_log" || [[ "$current_time" -gt "$timeout_time" ]]; do
@@ -141,141 +142,70 @@ runs:
             exit 1
           fi
 
+          # (Re-)Apply the wrapper(s)
+          export PATH="${{ env.CINTENT_BIN }}:$PATH"
+          echo ${{ env.CINTENT_BIN }} >> $GITHUB_PATH
+
           # Start the bash script
           echo "start_time = $(date +%s)" >> $metadata_log
           /bin/bash "$@"
           echo "end_time = $(date +%s)" >> $metadata_log
+
+          # (Re-)Apply the wrapper(s)
+          export PATH="${{ env.CINTENT_BIN }}:$PATH"
+          echo ${{ env.CINTENT_BIN }} >> $GITHUB_PATH
+
+          # Unset tracer indicator
           unset CINTENT_IS_TRACING_BASH
           echo "CINTENT_IS_TRACING_BASH=" >> $GITHUB_ENV
         else
+          # (Re-)Apply the wrapper(s)
+          export PATH="${{ env.CINTENT_BIN }}:$PATH"
+          echo ${{ env.CINTENT_BIN }} >> $GITHUB_PATH
+
+          # Start the bash script
           /bin/bash "$@"
+
+          # (Re-)Apply the wrapper(s)
+          export PATH="${{ env.CINTENT_BIN }}:$PATH"
+          echo ${{ env.CINTENT_BIN }} >> $GITHUB_PATH
         fi
         WRAPPER_EOF
         chmod +x ${{ env.CINTENT_BASH }}
 
-    - name: Write the 'black' Wrapper
+    - name: Write Python Wrappers
       if: ${{ runner.os == 'Linux' }}
       shell: bash
       run: |
-        cat << 'WRAPPER_EOF' > ${{ env.CINTENT_BLACK }}
+        cat << 'WRAPPER_EOF' > ${{ env.CINTENT_PYTHON_WRAPPER }}
         #!/bin/bash
         log_path="$CINTENT_LOGS/$(date +%s%N).$CINTENT_STEP_ID.scalene.json"
-        scalene run --outfile "$log_path" --cpu-only --profile-all --cpu-percent-threshold 0 --cpu-sampling-rate 0.01 --malloc-threshold 0 --stacks -m "$@"
-        WRAPPER_EOF
-        sudo chmod +x ${{ env.CINTENT_BLACK }}
-
-    - name: Write the 'flake8' Wrapper
-      if: ${{ runner.os == 'Linux' }}
-      shell: bash
-      run: |
-        cat << 'WRAPPER_EOF' > ${{ env.CINTENT_FLAKE8 }}
-        #!/bin/bash
-        log_path="$CINTENT_LOGS/$(date +%s%N).$CINTENT_STEP_ID.scalene.json"
-        scalene run --outfile "$log_path" --cpu-only --profile-all --cpu-percent-threshold 0 --cpu-sampling-rate 0.01 --malloc-threshold 0 --stacks -m "$@"
-        WRAPPER_EOF
-        sudo chmod +x ${{ env.CINTENT_FLAKE8 }}
-
-    - name: Write the 'mypy' Wrapper
-      if: ${{ runner.os == 'Linux' }}
-      shell: bash
-      run: |
-        cat << 'WRAPPER_EOF' > ${{ env.CINTENT_MYPY }}
-        #!/bin/bash
-        log_path="$CINTENT_LOGS/$(date +%s%N).$CINTENT_STEP_ID.scalene.json"
-        scalene run --outfile "$log_path" --cpu-only --profile-all --cpu-percent-threshold 0 --cpu-sampling-rate 0.01 --malloc-threshold 0 --stacks -m "$@"
-        WRAPPER_EOF
-        sudo chmod +x ${{ env.CINTENT_MYPY }}
-
-    - name: Write the 'pylint' Wrapper
-      if: ${{ runner.os == 'Linux' }}
-      shell: bash
-      run: |
-        cat << 'WRAPPER_EOF' > ${{ env.CINTENT_PYLINT }}
-        #!/bin/bash
-        log_path="$CINTENT_LOGS/$(date +%s%N).$CINTENT_STEP_ID.scalene.json"
-        scalene run --outfile "$log_path" --cpu-only --profile-all --cpu-percent-threshold 0 --cpu-sampling-rate 0.01 --malloc-threshold 0 --stacks -m "$@"
-        WRAPPER_EOF
-        sudo chmod +x ${{ env.CINTENT_PYLINT }}
-
-    - name: Write the 'pytest' Wrapper
-      if: ${{ runner.os == 'Linux' }}
-      shell: bash
-      run: |
-        cat << 'WRAPPER_EOF' > ${{ env.CINTENT_PYTEST }}
-        #!/bin/bash
-        log_path="$CINTENT_LOGS/$(date +%s%N).$CINTENT_STEP_ID.scalene.json"
-        scalene run --outfile "$log_path" --cpu-only --profile-all --cpu-percent-threshold 0 --cpu-sampling-rate 0.01 --malloc-threshold 0 --stacks -m "$@"
-        WRAPPER_EOF
-        sudo chmod +x ${{ env.CINTENT_PYTEST }}
-
-    - name: Write the 'python' Wrapper
-      if: ${{ runner.os == 'Linux' }}
-      shell: bash
-      run: |
-        cat << 'WRAPPER_EOF' > ${{ env.CINTENT_PY }}
-        #!/bin/bash
-        log_path="$CINTENT_LOGS/$(date +%s%N).$CINTENT_STEP_ID.scalene.json"
+        pip show scalene > /dev/null 2>&1 || pip install scalene
         scalene run --outfile "$log_path" --cpu-only --profile-all --cpu-percent-threshold 0 --cpu-sampling-rate 0.01 --malloc-threshold 0 --stacks "$@"
         WRAPPER_EOF
-        sudo chmod +x ${{ env.CINTENT_PY }}
-
-    - name: Write the 'python3' Wrapper
+        sudo chmod +x ${{ env.CINTENT_PYTHON_WRAPPER }}
+        sudo cp ${{ env.CINTENT_PYTHON_WRAPPER }} ${{ env.CINTENT_PYTHON }}
+        sudo cp ${{ env.CINTENT_PYTHON_WRAPPER }} ${{ env.CINTENT_PYTHON3 }}
+    
+    - name: Write Module Wrappers
       if: ${{ runner.os == 'Linux' }}
       shell: bash
       run: |
-        cat << 'WRAPPER_EOF' > ${{ env.CINTENT_PY3 }}
+        cat << 'WRAPPER_EOF' > ${{ env.CINTENT_MODULE_WRAPPER }}
         #!/bin/bash
         log_path="$CINTENT_LOGS/$(date +%s%N).$CINTENT_STEP_ID.scalene.json"
-        scalene run --outfile "$log_path" --cpu-only --profile-all --cpu-percent-threshold 0 --cpu-sampling-rate 0.01 --malloc-threshold 0 --stacks "$@"
-        WRAPPER_EOF
-        sudo chmod +x ${{ env.CINTENT_PY3 }}
-
-    - name: Write the 'ruff' Wrapper
-      if: ${{ runner.os == 'Linux' }}
-      shell: bash
-      run: |
-        cat << 'WRAPPER_EOF' > ${{ env.CINTENT_RUFF }}
-        #!/bin/bash
-        log_path="$CINTENT_LOGS/$(date +%s%N).$CINTENT_STEP_ID.scalene.json"
+        pip show scalene > /dev/null 2>&1 || pip install scalene
         scalene run --outfile "$log_path" --cpu-only --profile-all --cpu-percent-threshold 0 --cpu-sampling-rate 0.01 --malloc-threshold 0 --stacks -m "$@"
         WRAPPER_EOF
-        sudo chmod +x ${{ env.CINTENT_RUFF }}
-
-    - name: Write the 'tox' Wrapper
-      if: ${{ runner.os == 'Linux' }}
-      shell: bash
-      run: |
-        cat << 'WRAPPER_EOF' > ${{ env.CINTENT_TOX }}
-        #!/bin/bash
-        log_path="$CINTENT_LOGS/$(date +%s%N).$CINTENT_STEP_ID.scalene.json"
-        scalene run --outfile "$log_path" --cpu-only --profile-all --cpu-percent-threshold 0 --cpu-sampling-rate 0.01 --malloc-threshold 0 --stacks -m "$@"
-        WRAPPER_EOF
-        sudo chmod +x ${{ env.CINTENT_TOX }}
-
-    - name: Write the 'uv' Wrapper
-      if: ${{ runner.os == 'Linux' }}
-      shell: bash
-      run: |
-        cat << 'WRAPPER_EOF' > ${{ env.CINTENT_UV }}
-        #!/bin/bash
-        log_path="$CINTENT_LOGS/$(date +%s%N).$CINTENT_STEP_ID.scalene.json"
-        scalene run --outfile "$log_path" --cpu-only --profile-all --cpu-percent-threshold 0 --cpu-sampling-rate 0.01 --malloc-threshold 0 --stacks -m "$@"
-        WRAPPER_EOF
-        sudo chmod +x ${{ env.CINTENT_UV }}
-  
-    - name: Write the 'xdoctest' Wrapper
-      if: ${{ runner.os == 'Linux' }}
-      shell: bash
-      run: |
-        cat << 'WRAPPER_EOF' > ${{ env.CINTENT_XDOCTEST }}
-        #!/bin/bash
-        log_path="$CINTENT_LOGS/$(date +%s%N).$CINTENT_STEP_ID.scalene.json"
-        scalene run --outfile "$log_path" --cpu-only --profile-all --cpu-percent-threshold 0 --cpu-sampling-rate 0.01 --malloc-threshold 0 --stacks -m "$@"
-        WRAPPER_EOF
-        sudo chmod +x ${{ env.CINTENT_XDOCTEST }}
-
-    - name: Write the 'python3' Wrapper
-      if: ${{ runner.os == 'Linux' }}
-      shell: bash
-      run: |
-        echo ${{ env.CINTENT_BIN }} >> $GITHUB_PATH
+        sudo chmod +x ${{ env.CINTENT_MODULE_WRAPPER }}
+        sudo cp ${{ env.CINTENT_MODULE_WRAPPER }} ${{ env.CINTENT_BLACK }}
+        sudo cp ${{ env.CINTENT_MODULE_WRAPPER }} ${{ env.CINTENT_FLAKE8 }}
+        sudo cp ${{ env.CINTENT_MODULE_WRAPPER }} ${{ env.CINTENT_MYPY }}
+        sudo cp ${{ env.CINTENT_MODULE_WRAPPER }} ${{ env.CINTENT_NOX }}
+        sudo cp ${{ env.CINTENT_MODULE_WRAPPER }} ${{ env.CINTENT_POETRY }}
+        sudo cp ${{ env.CINTENT_MODULE_WRAPPER }} ${{ env.CINTENT_PYLINT }}
+        sudo cp ${{ env.CINTENT_MODULE_WRAPPER }} ${{ env.CINTENT_PYTEST }}
+        sudo cp ${{ env.CINTENT_MODULE_WRAPPER }} ${{ env.CINTENT_RUFF }}
+        sudo cp ${{ env.CINTENT_MODULE_WRAPPER }} ${{ env.CINTENT_TOX }}
+        sudo cp ${{ env.CINTENT_MODULE_WRAPPER }} ${{ env.CINTENT_UV }}
+        sudo cp ${{ env.CINTENT_MODULE_WRAPPER }} ${{ env.CINTENT_XDOCTEST }}
