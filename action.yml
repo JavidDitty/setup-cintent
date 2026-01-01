@@ -21,27 +21,12 @@ runs:
         echo "CINTENT_BIN=$CINTENT_BIN" >> $GITHUB_ENV
         mkdir -p $CINTENT_BIN
 
-        CINTENT_BLACK=/home/runner/cintent/bin/black
-        echo "CINTENT_BLACK=$CINTENT_BLACK" >> $GITHUB_ENV
-
-        CINTENT_FLAKE8=/home/runner/cintent/bin/flake8
-        echo "CINTENT_FLAKE8=$CINTENT_FLAKE8" >> $GITHUB_ENV
-
         CINTENT_LOGS=/home/runner/cintent/log
         echo "CINTENT_LOGS=$CINTENT_LOGS" >> $GITHUB_ENV
         mkdir -p $CINTENT_LOGS
 
         CINTENT_MODULE_WRAPPER=/home/runner/cintent/temp/module_wrapper
         echo "CINTENT_MODULE_WRAPPER=$CINTENT_MODULE_WRAPPER" >> $GITHUB_ENV
-
-        CINTENT_MYPY=/home/runner/cintent/bin/mypy
-        echo "CINTENT_MYPY=$CINTENT_MYPY" >> $GITHUB_ENV
-
-        CINTENT_NOX=/home/runner/cintent/bin/nox
-        echo "CINTENT_NOX=$CINTENT_NOX" >> $GITHUB_ENV
-
-        CINTENT_POETRY=/home/runner/cintent/bin/poetry
-        echo "CINTENT_POETRY=$CINTENT_POETRY" >> $GITHUB_ENV
 
         CINTENT_PYTHON=/home/runner/cintent/bin/python
         echo "CINTENT_PYTHON=$CINTENT_PYTHON" >> $GITHUB_ENV
@@ -52,30 +37,12 @@ runs:
         CINTENT_PYTHON3=/home/runner/cintent/bin/python3
         echo "CINTENT_PYTHON3=$CINTENT_PYTHON3" >> $GITHUB_ENV
 
-        CINTENT_PYLINT=/home/runner/cintent/bin/pylint
-        echo "CINTENT_PYLINT=$CINTENT_PYLINT" >> $GITHUB_ENV
-
-        CINTENT_PYTEST=/home/runner/cintent/bin/pytest
-        echo "CINTENT_PYTEST=$CINTENT_PYTEST" >> $GITHUB_ENV
-
-        CINTENT_RUFF=/home/runner/cintent/bin/ruff
-        echo "CINTENT_RUFF=$CINTENT_RUFF" >> $GITHUB_ENV
-
         CINTENT_STEP_ID=0
         echo "CINTENT_STEP_ID=$CINTENT_STEP_ID" >> $GITHUB_ENV
 
         CINTENT_TEMP=/home/runner/cintent/temp
         echo "CINTENT_TEMP=$CINTENT_TEMP" >> $GITHUB_ENV
         mkdir -p $CINTENT_TEMP
-
-        CINTENT_TOX=/home/runner/cintent/bin/tox
-        echo "CINTENT_TOX=$CINTENT_TOX" >> $GITHUB_ENV
-
-        CINTENT_UV=/home/runner/cintent/bin/uv
-        echo "CINTENT_UV=$CINTENT_UV" >> $GITHUB_ENV
-
-        CINTENT_XDOCTEST=/home/runner/cintent/bin/xdoctest
-        echo "CINTENT_XDOCTEST=$CINTENT_XDOCTEST" >> $GITHUB_ENV
 
     - name: Write Bash Wrappers
       if: ${{ runner.os == 'Linux' }}
@@ -202,17 +169,9 @@ runs:
         scalene run --outfile "$log_path" --cpu-only --profile-all --cpu-percent-threshold 0 --cpu-sampling-rate 0.01 --malloc-threshold 0 --stacks -m "$MODULE_CMD"
         WRAPPER_EOF
         sudo chmod +x ${{ env.CINTENT_MODULE_WRAPPER }}
-        sudo cp ${{ env.CINTENT_MODULE_WRAPPER }} ${{ env.CINTENT_BLACK }}
-        sudo cp ${{ env.CINTENT_MODULE_WRAPPER }} ${{ env.CINTENT_FLAKE8 }}
-        sudo cp ${{ env.CINTENT_MODULE_WRAPPER }} ${{ env.CINTENT_MYPY }}
-        sudo cp ${{ env.CINTENT_MODULE_WRAPPER }} ${{ env.CINTENT_NOX }}
-        sudo cp ${{ env.CINTENT_MODULE_WRAPPER }} ${{ env.CINTENT_POETRY }}
-        sudo cp ${{ env.CINTENT_MODULE_WRAPPER }} ${{ env.CINTENT_PYLINT }}
-        sudo cp ${{ env.CINTENT_MODULE_WRAPPER }} ${{ env.CINTENT_PYTEST }}
-        sudo cp ${{ env.CINTENT_MODULE_WRAPPER }} ${{ env.CINTENT_RUFF }}
-        sudo cp ${{ env.CINTENT_MODULE_WRAPPER }} ${{ env.CINTENT_TOX }}
-        sudo cp ${{ env.CINTENT_MODULE_WRAPPER }} ${{ env.CINTENT_UV }}
-        sudo cp ${{ env.CINTENT_MODULE_WRAPPER }} ${{ env.CINTENT_XDOCTEST }}
+        while read -r module; do
+          sudo cp ${{ env.CINTENT_MODULE_WRAPPER }} ${{ env.CINTENT_BIN }}/$module
+        done < ${{ github.action_path }}/modules.txt
 
     - name: Apply Wrappers
       if: ${{ runner.os == 'Linux' }}

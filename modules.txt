@@ -1,0 +1,5 @@
+hypothesis
+nose2
+pydocstyle
+pytest
+xdoctest
