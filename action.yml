@@ -209,3 +209,10 @@ runs:
         sudo cp ${{ env.CINTENT_MODULE_WRAPPER }} ${{ env.CINTENT_TOX }}
         sudo cp ${{ env.CINTENT_MODULE_WRAPPER }} ${{ env.CINTENT_UV }}
         sudo cp ${{ env.CINTENT_MODULE_WRAPPER }} ${{ env.CINTENT_XDOCTEST }}
+
+    - name: Apply Wrappers
+      if: ${{ runner.os == 'Linux' }}
+      shell: bash
+      run: |
+        export PATH="${{ env.CINTENT_BIN }}:$PATH"
+        echo ${{ env.CINTENT_BIN }} >> $GITHUB_PATH
