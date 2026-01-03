@@ -28,6 +28,13 @@ runs:
         CINTENT_STEP_ID=0
         echo "CINTENT_STEP_ID=$CINTENT_STEP_ID" >> $GITHUB_ENV
 
+    - name: Parse Python Functions
+      if: ${{ runner.os == 'Linux' }}
+      shell: bash
+      run: |
+        pip install pandas tree_sitter tree_sitter_python
+        python3 ${{ github.action_path }}/bin/functions.py -o ${{ env.CINTENT_LOGS }} ${{ github.workspace }}
+
     - name: Write Bash Wrappers
       if: ${{ runner.os == 'Linux' }}
       shell: bash
