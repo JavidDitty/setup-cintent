@@ -25,24 +25,8 @@ runs:
         echo "CINTENT_LOGS=$CINTENT_LOGS" >> $GITHUB_ENV
         mkdir -p $CINTENT_LOGS
 
-        CINTENT_MODULE_WRAPPER=/home/runner/cintent/temp/module_wrapper
-        echo "CINTENT_MODULE_WRAPPER=$CINTENT_MODULE_WRAPPER" >> $GITHUB_ENV
-
-        CINTENT_PYTHON=/home/runner/cintent/bin/python
-        echo "CINTENT_PYTHON=$CINTENT_PYTHON" >> $GITHUB_ENV
-
-        CINTENT_PYTHON_WRAPPER=/home/runner/cintent/temp/python_wrapper
-        echo "CINTENT_PYTHON_WRAPPER=$CINTENT_PYTHON_WRAPPER" >> $GITHUB_ENV
-
-        CINTENT_PYTHON3=/home/runner/cintent/bin/python3
-        echo "CINTENT_PYTHON3=$CINTENT_PYTHON3" >> $GITHUB_ENV
-
         CINTENT_STEP_ID=0
         echo "CINTENT_STEP_ID=$CINTENT_STEP_ID" >> $GITHUB_ENV
-
-        CINTENT_TEMP=/home/runner/cintent/temp
-        echo "CINTENT_TEMP=$CINTENT_TEMP" >> $GITHUB_ENV
-        mkdir -p $CINTENT_TEMP
 
     - name: Write Bash Wrappers
       if: ${{ runner.os == 'Linux' }}
@@ -89,6 +73,9 @@ runs:
           # Start snooping tools and pipe their outputs to their logs
           sudo execsnoop-bpfcc -qtx > "$execsnoop_log" 2> /dev/null &
           sudo opensnoop-bpfcc -eT -n python > "$opensnoop_log" 2> /dev/null &
+          sudo pip install py-spy
+          chmod +x ${{ github.action_path }}/pypsnoop
+          sudo ${{ github.action_path }}/pypsnoop &
       
           # Wait for snooping tools to start tracing (or timeout)
           timeout_time=60
@@ -139,46 +126,6 @@ runs:
         fi
         WRAPPER_EOF
         chmod +x ${{ env.CINTENT_BASH }}
-
-    - name: Write Python Wrappers
-      if: ${{ runner.os == 'Linux' }}
-      shell: bash
-      run: |
-        cat << 'WRAPPER_EOF' > ${{ env.CINTENT_PYTHON_WRAPPER }}
-        #!/bin/bash
-        MODULE_ARGS=" $@"
-        [[ ${MODULE_ARGS# -m} != "$MODULE_ARGS" ]] && MODULE_LHS=$(echo "$MODULE_ARGS" | awk '{print $1, $2}') || MODULE_LHS=$(echo "${MODULE_ARGS%% -*}" | awk '{$1=$1}1')
-        [[ ${MODULE_ARGS# -m} != "$MODULE_ARGS" ]] && MODULE_RHS=$(echo "$MODULE_ARGS" | awk '{$1=$2=""; sub(/^[ \t]+/, ""); print}') || MODULE_RHS=$(echo "-${MODULE_ARGS#* -}" | awk '{$1=$1}1')
-        MODULE_NAME=$(basename "$0")
-        if [[ ${MODULE_LHS# -m pip } != "$MODULE_LHS" ]]; then
-          LOG_PATH="$CINTENT_LOGS/$(date +%s%N).$CINTENT_STEP_ID.scalene.json"
-          pip show scalene > /dev/null 2>&1 || pip install scalene
-          scalene run --outfile "$LOG_PATH" --cpu-only --profile-all --cpu-percent-threshold 0 --cpu-sampling-rate 0.01 --malloc-threshold 0 --stacks "$MODULE_LHS" --- "$MODULE_RHS"
-        else
-          MODULE_PATH=$(which -a "$MODULE_NAME" | awk 'NR==1 {first=$0} NR>1 && $0 != first {print; exit}')
-          $MODULE_PATH ${MODULE_ARGS# }
-        fi
-        WRAPPER_EOF
-        sudo chmod +x ${{ env.CINTENT_PYTHON_WRAPPER }}
-        sudo cp ${{ env.CINTENT_PYTHON_WRAPPER }} ${{ env.CINTENT_PYTHON }}
-        sudo cp ${{ env.CINTENT_PYTHON_WRAPPER }} ${{ env.CINTENT_PYTHON3 }}
-    
-    - name: Write Module Wrappers
-      if: ${{ runner.os == 'Linux' }}
-      shell: bash
-      run: |
-        cat << 'WRAPPER_EOF' > ${{ env.CINTENT_MODULE_WRAPPER }}
-        #!/bin/bash
-        MODULE_ARGS="$@"
-        MODULE_NAME=$(basename "$0")
-        log_path="$CINTENT_LOGS/$(date +%s%N).$CINTENT_STEP_ID.scalene.json"
-        pip show scalene > /dev/null 2>&1 || pip install scalene
-        scalene run --outfile "$log_path" --cpu-only --profile-all --cpu-percent-threshold 0 --cpu-sampling-rate 0.01 --malloc-threshold 0 --stacks -m "$MODULE_NAME" --- "$MODULE_ARGS"
-        WRAPPER_EOF
-        sudo chmod +x ${{ env.CINTENT_MODULE_WRAPPER }}
-        while read -r module; do
-          sudo cp ${{ env.CINTENT_MODULE_WRAPPER }} ${{ env.CINTENT_BIN }}/$module
-        done < ${{ github.action_path }}/modules.txt
 
     - name: Apply Wrappers
       if: ${{ runner.os == 'Linux' }}
