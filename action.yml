@@ -74,8 +74,8 @@ runs:
           sudo execsnoop-bpfcc -qtx > "$execsnoop_log" 2> /dev/null &
           sudo opensnoop-bpfcc -eT -n python > "$opensnoop_log" 2> /dev/null &
           sudo pip install py-spy
-          chmod +x ${{ github.action_path }}/pypsnoop
-          sudo ${{ github.action_path }}/pypsnoop &
+          chmod +x ${{ github.action_path }}/bin/pypsnoop
+          sudo ${{ github.action_path }}/bin/pypsnoop &
       
           # Wait for snooping tools to start tracing (or timeout)
           timeout_time=60
