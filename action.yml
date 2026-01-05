@@ -11,7 +11,7 @@ runs:
       if: ${{ runner.os == 'Linux' }}
       shell: bash
       run: |
-        CINTENT_ARTIFACT_NAME="cintent_log"
+        CINTENT_ARTIFACT_NAME="$(date +%s%N)-cintent_logs"
         echo "CINTENT_ARTIFACT_NAME=$CINTENT_ARTIFACT_NAME" >> $GITHUB_ENV
 
         CINTENT_BASH=/home/runner/cintent/bin/bash
