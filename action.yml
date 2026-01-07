@@ -25,6 +25,12 @@ runs:
         echo "CINTENT_LOGS=$CINTENT_LOGS" >> $GITHUB_ENV
         mkdir -p $CINTENT_LOGS
 
+        CINTENT_PYPSNOOP=${{ github.action_path }}/bin/pypsnoop
+        echo "CINTENT_PYPSNOOP=$CINTENT_PYPSNOOP" >> $GITHUB_ENV
+
+        CINTENT_PYSPY=${{ github.action_path }}/bin/py-spy
+        echo "CINTENT_PYSPY=$CINTENT_PYSPY" >> $GITHUB_ENV
+
         CINTENT_STEP_ID=0
         echo "CINTENT_STEP_ID=$CINTENT_STEP_ID" >> $GITHUB_ENV
 
@@ -80,9 +86,8 @@ runs:
           # Start snooping tools and pipe their outputs to their logs
           sudo execsnoop-bpfcc -qtx > "$execsnoop_log" 2> /dev/null &
           sudo opensnoop-bpfcc -eT -n python > "$opensnoop_log" 2> /dev/null &
-          sudo pip install py-spy
-          chmod +x ${{ github.action_path }}/bin/pypsnoop
-          sudo --preserve-env=CINTENT_LOGS,CINTENT_STEP_ID ${{ github.action_path }}/bin/pypsnoop &
+          chmod +x ${{ env.CINTENT_PYPSNOOP }}
+          sudo --preserve-env=CINTENT_LOGS,CINTENT_PYSPY,CINTENT_STEP_ID ${{ env.CINTENT_PYPSNOOP }} &
       
           # Wait for snooping tools to start tracing (or timeout)
           timeout_time=60
