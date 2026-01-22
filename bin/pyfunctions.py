@@ -90,6 +90,8 @@ def parse_functions(root_dir: str) -> Generator[dict, None, None]:
 
             # Get the line number of the function
             line = node.start_point.row + 1
+            if node.parent is not None and node.parent.type == 'decorated_definition':
+                line = node.parent.start_point.row + 1
 
             # Get the header of the function
             parameters = node.child_by_field_name('parameters').text.decode()
@@ -98,6 +100,9 @@ def parse_functions(root_dir: str) -> Generator[dict, None, None]:
             if return_type:
                 return_type = return_type.text.decode()
                 header = f'{header} -> {return_type}'
+            if node.parent is not None and node.parent.type == 'decorated_definition':
+                decorator = node.parent.children[0].text.decode()
+                header = f'{decorator}\n{header}'
             
             # Return the function's metadata
             yield \
