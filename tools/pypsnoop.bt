@@ -1,0 +1,21 @@
+BEGIN
+{
+    @tracees["python"] = 1;
+    @tracees["python3"] = 1;
+    @tracees["hypothesis"] = 1;
+    @tracees["nose2"] = 1;
+    @tracees["pydocstyle"] = 1;
+    @tracees["pytest"] = 1;
+    @tracees["xdoctest"] = 1;
+}
+
+tracepoint:sched:sched_process_exec
+/@tracees[comm]/
+{
+    system("set -u; \"$CINTENT_PYPSNOOP_SH\"");
+}
+
+END
+{
+	clear(@tracees);
+}

@@ -21,6 +21,9 @@ runs:
         echo "CINTENT_BIN=$CINTENT_BIN" >> $GITHUB_ENV
         mkdir -p $CINTENT_BIN
 
+        CINTENT_GETHOSTLATENCY=${{ github.action_path }}/tools/gethostlatency.bt
+        echo "CINTENT_GETHOSTLATENCY=$CINTENT_GETHOSTLATENCY" >> $GITHUB_ENV
+
         CINTENT_LOGS=/home/runner/cintent/log
         echo "CINTENT_LOGS=$CINTENT_LOGS" >> $GITHUB_ENV
         mkdir -p $CINTENT_LOGS
@@ -28,14 +31,20 @@ runs:
         CINTENT_PYFUNCTIONS=${{ github.action_path }}/bin/pyfunctions
         echo "CINTENT_PYFUNCTIONS=$CINTENT_PYFUNCTIONS" >> $GITHUB_ENV
 
-        CINTENT_PYPSNOOP=${{ github.action_path }}/bin/pypsnoop
+        CINTENT_PYPSNOOP=${{ github.action_path }}/tools/pypsnoop.bt
         echo "CINTENT_PYPSNOOP=$CINTENT_PYPSNOOP" >> $GITHUB_ENV
+
+        CINTENT_PYPSNOOP_SH=${{ github.action_path }}/tools/pypsnoop.sh
+        echo "CINTENT_PYPSNOOP_SH=$CINTENT_PYPSNOOP_SH" >> $GITHUB_ENV
 
         CINTENT_PYSPY=${{ github.action_path }}/bin/py-spy
         echo "CINTENT_PYSPY=$CINTENT_PYSPY" >> $GITHUB_ENV
 
         CINTENT_STEP_ID=0
         echo "CINTENT_STEP_ID=$CINTENT_STEP_ID" >> $GITHUB_ENV
+
+        CINTENT_TCPLIFE=${{ github.action_path }}/tools/tcplife.bt
+        echo "CINTENT_TCPLIFE=$CINTENT_TCPLIFE" >> $GITHUB_ENV
 
     - name: Parse Python Functions
       if: ${{ runner.os == 'Linux' }}
@@ -68,7 +77,9 @@ runs:
           timestamp=$(date +%s%N)
           metadata_log=$CINTENT_LOGS/$timestamp.$CINTENT_STEP_ID.metadata.txt
           execsnoop_log=$CINTENT_LOGS/$timestamp.$CINTENT_STEP_ID.execsnoop.txt
+          gethostlatency_log=$CINTENT_LOGS/$timestamp.$CINTENT_STEP_ID.gethostlatency.txt
           opensnoop_log=$CINTENT_LOGS/$timestamp.$CINTENT_STEP_ID.opensnoop.txt
+          tcplife_log=$CINTENT_LOGS/$timestamp.$CINTENT_STEP_ID.tcplife.txt
           
           # Create the metadata log
           echo -en \
@@ -86,11 +97,13 @@ runs:
           sed -i 's/^[ ]*//' "$metadata_log"
 
           # Start snooping tools and pipe their outputs to their logs
-          sudo execsnoop-bpfcc -qtx > "$execsnoop_log" 2> /dev/null &
-          sudo opensnoop-bpfcc -eT -n python > "$opensnoop_log" 2> /dev/null &
-          chmod +x ${{ env.CINTENT_PYPSNOOP }}
-          sudo --preserve-env=CINTENT_LOGS,CINTENT_PYSPY,CINTENT_STEP_ID ${{ env.CINTENT_PYPSNOOP }} &
-      
+          export BPFTRACE_MAX_STRLEN=1024
+          sudo --preserve-env=BPFTRACE_MAX_STRLEN "${{ CINTENT_GETHOSTLATENCY }}" > "$gethostlatency_log" 2> /dev/null &
+          sudo --preserve-env=BPFTRACE_MAX_STRLEN "${{ CINTENT_TCPLIFE }}" > "$tcplife_log" 2> /dev/null &
+          sudo --preserve-env=BPFTRACE_MAX_STRLEN,CINTENT_LOGS,CINTENT_PYSPY,CINTENT_STEP_ID "${{ env.CINTENT_PYPSNOOP }}" &
+          sudo execsnoop-bpfcc -qtx --max-args 100 > "$execsnoop_log" 2> /dev/null &
+          sudo opensnoop-bpfcc -eT > "$opensnoop_log" 2> /dev/null &
+          
           # Wait for snooping tools to start tracing (or timeout)
           timeout_time=60
           start_time=$SECONDS

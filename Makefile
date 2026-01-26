@@ -10,4 +10,4 @@ build:
 		--workpath ${WORKPATH} \
 		--distpath ${DISTPATH} \
 		--specpath ${SPECPATH} \
-		./bin/pyfunctions.py
+		./tools/pyfunctions.py
