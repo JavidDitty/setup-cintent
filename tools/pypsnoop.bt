@@ -1,3 +1,5 @@
+#!/usr/bin/env bpftrace
+
 BEGIN
 {
     @tracees["python"] = 1;

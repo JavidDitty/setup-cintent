@@ -98,9 +98,9 @@ runs:
 
           # Start snooping tools and pipe their outputs to their logs
           export BPFTRACE_MAX_STRLEN=1024
-          sudo --preserve-env=BPFTRACE_MAX_STRLEN "${{ CINTENT_GETHOSTLATENCY }}" > "$gethostlatency_log" 2> /dev/null &
-          sudo --preserve-env=BPFTRACE_MAX_STRLEN "${{ CINTENT_TCPLIFE }}" > "$tcplife_log" 2> /dev/null &
-          sudo --preserve-env=BPFTRACE_MAX_STRLEN,CINTENT_LOGS,CINTENT_PYSPY,CINTENT_STEP_ID "${{ env.CINTENT_PYPSNOOP }}" &
+          sudo --preserve-env=BPFTRACE_MAX_STRLEN bpftrace "${{ CINTENT_GETHOSTLATENCY }}" > "$gethostlatency_log" 2> /dev/null &
+          sudo --preserve-env=BPFTRACE_MAX_STRLEN bpftrace "${{ CINTENT_TCPLIFE }}" > "$tcplife_log" 2> /dev/null &
+          sudo --preserve-env=BPFTRACE_MAX_STRLEN,CINTENT_LOGS,CINTENT_PYSPY,CINTENT_STEP_ID bpftrace --unsafe "${{ env.CINTENT_PYPSNOOP }}" &
           sudo execsnoop-bpfcc -qtx --max-args 100 > "$execsnoop_log" 2> /dev/null &
           sudo opensnoop-bpfcc -eT > "$opensnoop_log" 2> /dev/null &
           
