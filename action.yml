@@ -97,7 +97,7 @@ runs:
           sed -i 's/^[ ]*//' "$metadata_log"
 
           # Start snooping tools and pipe their outputs to their logs
-          export BPFTRACE_MAX_STRLEN=1024
+          export BPFTRACE_MAX_STRLEN=200
           sudo --preserve-env=BPFTRACE_MAX_STRLEN bpftrace "${{ CINTENT_GETHOSTLATENCY }}" > "$gethostlatency_log" 2> /dev/null &
           sudo --preserve-env=BPFTRACE_MAX_STRLEN bpftrace "${{ CINTENT_TCPLIFE }}" > "$tcplife_log" 2> /dev/null &
           sudo --preserve-env=BPFTRACE_MAX_STRLEN,CINTENT_LOGS,CINTENT_PYSPY,CINTENT_STEP_ID bpftrace --unsafe "${{ env.CINTENT_PYPSNOOP }}" &
