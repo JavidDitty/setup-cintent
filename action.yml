@@ -21,8 +21,8 @@ runs:
         echo "CINTENT_BIN=$CINTENT_BIN" >> $GITHUB_ENV
         mkdir -p $CINTENT_BIN
 
-        CINTENT_GETHOSTLATENCY=${{ github.action_path }}/tools/gethostlatency.bt
-        echo "CINTENT_GETHOSTLATENCY=$CINTENT_GETHOSTLATENCY" >> $GITHUB_ENV
+        CINTENT_GETHOSTNAME=${{ github.action_path }}/tools/gethostname.bt
+        echo "CINTENT_GETHOSTNAME=$CINTENT_GETHOSTNAME" >> $GITHUB_ENV
 
         CINTENT_LOGS=/home/runner/cintent/log
         echo "CINTENT_LOGS=$CINTENT_LOGS" >> $GITHUB_ENV
@@ -77,7 +77,7 @@ runs:
           timestamp=$(date +%s%N)
           metadata_log=$CINTENT_LOGS/$timestamp.$CINTENT_STEP_ID.metadata.txt
           execsnoop_log=$CINTENT_LOGS/$timestamp.$CINTENT_STEP_ID.execsnoop.txt
-          gethostlatency_log=$CINTENT_LOGS/$timestamp.$CINTENT_STEP_ID.gethostlatency.txt
+          gethostname_log=$CINTENT_LOGS/$timestamp.$CINTENT_STEP_ID.gethostname.txt
           opensnoop_log=$CINTENT_LOGS/$timestamp.$CINTENT_STEP_ID.opensnoop.txt
           tcplife_log=$CINTENT_LOGS/$timestamp.$CINTENT_STEP_ID.tcplife.txt
           
@@ -98,7 +98,7 @@ runs:
 
           # Start snooping tools and pipe their outputs to their logs
           export BPFTRACE_MAX_STRLEN=200
-          sudo --preserve-env=BPFTRACE_MAX_STRLEN bpftrace "${{ env.CINTENT_GETHOSTLATENCY }}" > "$gethostlatency_log" 2> /dev/null &
+          sudo --preserve-env=BPFTRACE_MAX_STRLEN bpftrace "${{ env.CINTENT_GETHOSTNAME }}" > "$gethostname_log" 2> /dev/null &
           sudo --preserve-env=BPFTRACE_MAX_STRLEN bpftrace "${{ env.CINTENT_TCPLIFE }}" > "$tcplife_log" 2> /dev/null &
           sudo --preserve-env=BPFTRACE_MAX_STRLEN,CINTENT_LOGS,CINTENT_PYSPY,CINTENT_STEP_ID bpftrace --unsafe "${{ env.CINTENT_PYPSNOOP }}" &
           sudo execsnoop-bpfcc -qtx --max-args 100 > "$execsnoop_log" 2> /dev/null &

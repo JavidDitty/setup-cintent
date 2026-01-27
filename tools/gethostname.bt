@@ -1,0 +1,57 @@
+#!/usr/bin/env bpftrace
+
+// Based on https://github.com/bpftrace/bpftrace/discussions/2364
+
+struct addrinfo
+{
+  int ai_flags;
+  int ai_family;
+  int ai_socktype;
+  int ai_protocol;
+  size_t ai_addrlen;
+  struct sockaddr *ai_addr;
+  char *ai_canonname;
+  struct addrinfo *ai_next;
+};
+
+struct sockaddr_in
+{
+    short sin_family;
+    unsigned short sin_port;
+    int sin_addr;
+    char sin_zero[8];
+};
+
+BEGIN
+{
+	printf("%-7s %-7s %-15s %s\n", "PID", "TID", "ADDR", "HOST");
+}
+
+uprobe:/lib/x86_64-linux-gnu/libc.so.6:getaddrinfo
+{
+	@host[tid] = arg0;
+    @info[tid] = arg3;
+}
+
+uretprobe:/lib/x86_64-linux-gnu/libc.so.6:getaddrinfo
+{
+	$info = (struct addrinfo *) *@info[tid];
+	$i = 0;
+	while ($i < 100)
+	{
+		if ($info == 0) { break; }
+		$host = str(@host[tid]);
+		$addr = ntop(((struct sockaddr_in *) $info->ai_addr)->sin_addr);
+		printf("%-7d %-7d %-15s %s\n", pid, tid, $addr, $host);
+		$info = $info->ai_next;
+		$i++;
+	}
+	delete(@host[tid]);
+    delete(@info[tid]);
+}
+
+END
+{	
+	clear(@host);
+	clear(@info);
+}

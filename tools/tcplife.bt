@@ -11,6 +11,7 @@
  * When copying or porting, include this comment.
  *
  * 17-Apr-2019  Brendan Gregg   Created this.
+ * 27-Jan-2026  Javid Ditty     Added TID to output.
  */
 
 #ifndef BPFTRACE_HAVE_BTF
@@ -24,9 +25,8 @@
 
 BEGIN
 {
-	printf("%-5s %-10s %-15s %-5s %-15s %-5s ", "PID", "COMM",
-	    "LADDR", "LPORT", "RADDR", "RPORT");
-	printf("%5s %5s %s\n", "TX_KB", "RX_KB", "MS");
+	printf("%-7s %-7s %-10s %-15s %-5s %-15s %-5s %5s %5s %s\n", 
+		"PID", "TID", "COMM", "LADDR", "LPORT", "RADDR", "RPORT", "TX_KB", "RX_KB", "MS");
 }
 
 kprobe:tcp_set_state
@@ -54,6 +54,7 @@ kprobe:tcp_set_state
 	// record PID & comm on SYN_SENT
 	if ($newstate == TCP_SYN_SENT || $newstate == TCP_LAST_ACK) {
 		@skpid[$sk] = pid;
+		@sktid[$sk] = tid;
 		@skcomm[$sk] = comm;
 	}
 
@@ -65,10 +66,12 @@ kprobe:tcp_set_state
 		$dport = bswap($dport);
 		$tp = (struct tcp_sock *)$sk;
 		$pid = @skpid[$sk];
+		$tid = @sktid[$sk];
 		$comm = @skcomm[$sk];
 		if ($comm == "") {
 			// not cached, use current task
 			$pid = pid;
+			$tid = tid;
 			$comm = comm;
 		}
 
@@ -85,18 +88,22 @@ kprobe:tcp_set_state
 			$daddr = ntop(AF_INET6,
 			    $sk->__sk_common.skc_v6_daddr.in6_u.u6_addr8);
 		}
-		printf("%-5d %-10.10s %-15s %-5d %-15s %-6d ", $pid,
-		    $comm, $saddr, $lport, $daddr, $dport);
-		printf("%5d %5d %d\n", $tp->bytes_acked / 1024,
-		    $tp->bytes_received / 1024, $delta_ms);
+		printf("%-7d %-7d %-10.10s %-15s %-5d %-15s %-6d ", 
+			$pid, $tid, $comm, $saddr, $lport, $daddr, $dport);
+		printf("%5d %5d %d\n", 
+			$tp->bytes_acked / 1024, $tp->bytes_received / 1024, $delta_ms);
 
 		delete(@birth[$sk]);
 		delete(@skpid[$sk]);
+		delete(@sktid[$sk]);
 		delete(@skcomm[$sk]);
 	}
 }
 
 END
 {
-	clear(@birth); clear(@skpid); clear(@skcomm);
+	clear(@birth);
+	clear(@skpid);
+	clear(@sktid);
+	clear(@skcomm);
 }
