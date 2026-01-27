@@ -25,7 +25,7 @@
 
 BEGIN
 {
-	printf("%-7s %-7s %-10s %-15s %-5s %-15s %-5s %5s %5s %s\n", 
+	printf("%-7s %-7s %-16s %-15s %-5s %-15s %-5s %5s %5s %s\n", 
 		"PID", "TID", "COMM", "LADDR", "LPORT", "RADDR", "RPORT", "TX_KB", "RX_KB", "MS");
 }
 
@@ -88,10 +88,8 @@ kprobe:tcp_set_state
 			$daddr = ntop(AF_INET6,
 			    $sk->__sk_common.skc_v6_daddr.in6_u.u6_addr8);
 		}
-		printf("%-7d %-7d %-10.10s %-15s %-5d %-15s %-6d ", 
-			$pid, $tid, $comm, $saddr, $lport, $daddr, $dport);
-		printf("%5d %5d %d\n", 
-			$tp->bytes_acked / 1024, $tp->bytes_received / 1024, $delta_ms);
+		printf("%-7d %-7d %-16s %-15s %-5d %-15s %-6d %-5d %-5d %d\n", 
+			$pid, $tid, $comm, $saddr, $lport, $daddr, $dport, $tp->bytes_acked / 1024, $tp->bytes_received / 1024, $delta_ms);
 
 		delete(@birth[$sk]);
 		delete(@skpid[$sk]);
