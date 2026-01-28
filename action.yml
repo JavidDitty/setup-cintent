@@ -100,7 +100,7 @@ runs:
           export BPFTRACE_MAX_STRLEN=200
           sudo --preserve-env=BPFTRACE_MAX_STRLEN bpftrace "${{ env.CINTENT_GETHOSTNAME }}" > "$gethostname_log" 2> /dev/null &
           sudo --preserve-env=BPFTRACE_MAX_STRLEN bpftrace "${{ env.CINTENT_TCPLIFE }}" > "$tcplife_log" 2> /dev/null &
-          sudo --preserve-env=BPFTRACE_MAX_STRLEN,CINTENT_LOGS,CINTENT_PYSPY,CINTENT_STEP_ID bpftrace --unsafe "${{ env.CINTENT_PYPSNOOP }}" &> /dev/null &
+          sudo --preserve-env=BPFTRACE_MAX_STRLEN,CINTENT_LOGS,CINTENT_PYPSNOOP,CINTENT_PYPSNOOP_SH,CINTENT_PYSPY,CINTENT_STEP_ID bpftrace --unsafe "${{ env.CINTENT_PYPSNOOP }}" &> /dev/null &
           sudo execsnoop-bpfcc -qtx --max-args 100 > "$execsnoop_log" 2> /dev/null &
           sudo opensnoop-bpfcc -eT > "$opensnoop_log" 2> /dev/null &
           

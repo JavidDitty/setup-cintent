@@ -14,7 +14,7 @@ BEGIN
 tracepoint:sched:sched_process_exec
 /@tracees[comm]/
 {
-    system("set -u; \"$CINTENT_PYPSNOOP_SH\"");
+    system("set -u; bash \"$CINTENT_PYPSNOOP_SH\" %d", pid);
 }
 
 END
