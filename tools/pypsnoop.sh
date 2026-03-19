@@ -50,9 +50,42 @@ case "$PROFILER" in
 
     "uprobe")
         # eBPF uprobe tracing - captures ALL calls
+        # Detect actual Python binary path from PID
+        PYTHON_BIN=$(readlink -f /proc/$PID/exe)
+
         sudo bpftrace \
             -o "$CINTENT_LOGS/$TIMESTAMP.$CINTENT_STEP_ID.uprobe.log" \
-            "$CINTENT_PYPSNOOP_UPROBE" \
+            -e "
+            BEGIN { printf(\"timestamp,pid,event,function,file,line,duration_ns\n\"); }
+            uprobe:$PYTHON_BIN:PyEval_EvalFrameEx,
+            uprobe:$PYTHON_BIN:_PyEval_EvalFrameDefault
+            {
+                \$frame = (struct frame *)arg0;
+                @start[tid] = nsecs;
+                @frame[tid] = \$frame;
+                printf(\"%llu,%d,enter,%s,%s,%d,0\n\",
+                    nsecs, pid,
+                    str(\$frame->f_code->co_name),
+                    str(\$frame->f_code->co_filename),
+                    \$frame->f_lineno);
+            }
+            uretprobe:$PYTHON_BIN:PyEval_EvalFrameEx,
+            uretprobe:$PYTHON_BIN:_PyEval_EvalFrameDefault
+            /@start[tid]/
+            {
+                \$duration = nsecs - @start[tid];
+                \$frame = @frame[tid];
+                printf(\"%llu,%d,exit,%s,%s,%d,%llu\n\",
+                    nsecs, pid,
+                    str(\$frame->f_code->co_name),
+                    str(\$frame->f_code->co_filename),
+                    \$frame->f_lineno,
+                    \$duration);
+                delete(@start[tid]);
+                delete(@frame[tid]);
+            }
+            END { clear(@start); clear(@frame); }
+            " \
             -p "$PID" \
             &> /dev/null &
         echo $! > "$CINTENT_LOGS/uprobe_$PID.pid"
