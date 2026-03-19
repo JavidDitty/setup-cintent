@@ -182,6 +182,36 @@ runs:
             echo "[cintent] Using sys.setprofile() profiler"
           fi
 
+          # For uprobe profiler: verify USDT probe arguments are accessible in
+          # the active Python binary BEFORE the step starts, so setprofile can
+          # be activated as a fallback if they are not.
+          #
+          # Python 3.8 and 3.9 from the GitHub Actions toolcache are compiled
+          # with incomplete SystemTap SDT notes: arg1 (funcname) and arg2
+          # (lineno) location metadata is missing, so bpftrace fails with
+          # "couldn't get argument 1".  Python 3.10+ toolcache and system
+          # Python (/usr/bin/python3) do not have this problem.
+          #
+          # The check reads the .note.stapsdt ELF section and counts the
+          # argument descriptors for the function__entry probe.  Each
+          # descriptor contains an '@' (e.g. "8@-96(%rbp)"), so we count '@'.
+          if [ "$CINTENT_PROFILER" == "uprobe" ]; then
+            _cintent_py=$(readlink -f \
+              "$(command -v python3 2>/dev/null || command -v python 2>/dev/null)" \
+              2>/dev/null)
+            _cintent_usdt_args=0
+            if command -v readelf &>/dev/null && [ -n "$_cintent_py" ] && [ -f "$_cintent_py" ]; then
+              _cintent_usdt_args=$(readelf -n "$_cintent_py" 2>/dev/null \
+                | awk '/Name: function__entry/{found=1} found && /Arguments:/{print; exit}' \
+                | grep -o '[^ ]*@[^ ]*' | wc -l | tr -d ' ')
+            fi
+            if [ "${_cintent_usdt_args:-0}" -lt 3 ]; then
+              export PYTHONPROFILE="${{ env.CINTENT_SETPROFILE_SCRIPT }}"
+              export CINTENT_PROFILE_LOG="$CINTENT_LOGS/$(date +%s%N).$CINTENT_STEP_ID.setprofile.csv"
+              echo "[cintent] uprobe USDT args ${_cintent_usdt_args}/3 in $_cintent_py -- setprofile fallback active" >&2
+            fi
+          fi
+
           # Start the bash script
           echo "start_time = $(date +%s)" >> $metadata_log
           /bin/bash "$@"

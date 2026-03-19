@@ -101,6 +101,26 @@ case "$PROFILER" in
         LOG_FILE="$CINTENT_LOGS/$TIMESTAMP.$CINTENT_STEP_ID.uprobe.log"
         ERR_FILE="$CINTENT_LOGS/$TIMESTAMP.$CINTENT_STEP_ID.uprobe.stderr"
 
+        # Verify all 3 USDT probe arguments are accessible before starting
+        # bpftrace.  Python 3.8/3.9 from the GitHub Actions toolcache have
+        # incomplete SDT notes: arg1 (funcname) and arg2 (lineno) are missing,
+        # so bpftrace errors with "couldn't get argument 1".  When that is the
+        # case, the bash wrapper has already activated setprofile as a fallback,
+        # so we can exit cleanly here.
+        USDT_ARG_COUNT=0
+        if command -v readelf &>/dev/null; then
+            USDT_ARG_COUNT=$(readelf -n "$PYTHON_BIN" 2>/dev/null \
+                | awk '/Name: function__entry/{found=1} found && /Arguments:/{print; exit}' \
+                | grep -o '[^ ]*@[^ ]*' | wc -l | tr -d ' ')
+        fi
+        if [ "${USDT_ARG_COUNT:-0}" -lt 3 ]; then
+            echo "[cintent/uprobe] USDT args ${USDT_ARG_COUNT}/3 in $PYTHON_BIN" \
+                >> "$ERR_FILE"
+            echo "[cintent/uprobe] setprofile fallback should be active (set at wrapper startup)" \
+                >> "$ERR_FILE"
+            exit 0
+        fi
+
         sudo --preserve-env=BPFTRACE_MAX_STRLEN \
             bpftrace \
             -o "$LOG_FILE" \
