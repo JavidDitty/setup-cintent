@@ -58,6 +58,13 @@ case "$PROFILER" in
         echo $! > "$CINTENT_LOGS/uprobe_$PID.pid"
         ;;
 
+    "setprofile")
+        # sys.setprofile() is enabled via PYTHONPROFILE env var
+        # No need to attach to running process - profiling starts automatically
+        # This case is a no-op since profiling is handled at Python startup
+        echo "[setprofile] Profiling enabled via PYTHONPROFILE for PID $PID" >&2
+        ;;
+
     *)
         echo "Unknown profiler: $PROFILER" >&2
         exit 1

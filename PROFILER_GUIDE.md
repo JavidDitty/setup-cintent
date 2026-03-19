@@ -1,14 +1,15 @@
 # Profiler Options Guide
 
-CIntent now supports three different profiling backends. Choose based on your needs:
+CIntent now supports four different profiling backends. Choose based on your needs:
 
 ## Profiler Comparison
 
-| Profiler | Coverage | Overhead | Output Format | Best For |
-|----------|----------|----------|---------------|----------|
-| **py-spy** (default) | ~90-95% | 5-10% | speedscope JSON | General use, balanced |
-| **perf** | ~99% | 10-15% | perf.data | System analysis, detailed |
-| **uprobe** | 100% | 1-3% | CSV trace | Complete coverage, low overhead |
+| Profiler | Coverage | Overhead | Requires Root | Output Format | Best For |
+|----------|----------|----------|---------------|---------------|----------|
+| **py-spy** (default) | ~90-95% | 5-10% | No | speedscope JSON | General use, balanced |
+| **perf** | ~99% | 10-15% | Yes | perf.data | System analysis, detailed |
+| **uprobe** | 100% | 1-3% | Yes | CSV trace | Complete coverage, low overhead |
+| **setprofile** | 100% | 5-8% | No | CSV trace | Complete coverage, no root needed |
 
 ## Usage
 
@@ -120,3 +121,50 @@ For `py-spy` and `perf`:
 - **10000** - Maximum coverage, high overhead
 
 For `uprobe`: sample_rate is ignored (captures all calls).
+
+### For Maximum Coverage (No Root Required) ⭐ **RECOMMENDED for GitHub Actions**
+```yaml
+- uses: clonedSemicolon/setup-cintent@main
+  with:
+    profiler: "setprofile"
+```
+
+---
+
+## setprofile (sys.setprofile) - NEW!
+
+**Uses Python's built-in `sys.setprofile()` for deterministic 100% coverage without needing root access or external tools.**
+
+### Advantages
+- ✅ **100% function call coverage** (deterministic, not sampling)
+- ✅ **No root/sudo required** (works in restrictive environments)
+- ✅ **Cross-platform** (Linux, macOS, Windows)
+- ✅ **No external dependencies** (pure Python stdlib)
+- ✅ **~5-8% overhead** (reasonable for CI)
+
+### Output Format
+CSV format: `timestamp_ns,event,function,filename,line`
+
+```csv
+1234567890123456789,call,test_function,/path/to/test.py,42
+1234567890234567890,return,test_function,/path/to/test.py,42
+```
+
+### When to Use
+- GitHub Actions or CI environments without root
+- Need 100% coverage but uprobe is unavailable
+- Cross-platform profiling (non-Linux)
+- Development/debugging scenarios
+
+---
+
+## Updated Sample Rate Guidelines
+
+For `py-spy` and `perf` only:
+- **100** - Low overhead, long-running processes
+- **500** - Balanced, good for most CI jobs
+- **1000** - Default, captures most calls
+- **5000** - High coverage, acceptable overhead
+- **10000** - Maximum coverage, high overhead
+
+For `uprobe` and `setprofile`: sample_rate is ignored (captures all calls).

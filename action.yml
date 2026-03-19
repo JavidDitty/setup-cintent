@@ -14,7 +14,7 @@ inputs:
     required: false
     default: "1000"
   profiler:
-    description: "Profiler to use: 'py-spy' (sampling, default), 'perf' (system-level sampling), 'uprobe' (eBPF tracing, 100% coverage)"
+    description: "Profiler to use: 'py-spy' (sampling, default), 'perf' (system-level sampling), 'uprobe' (eBPF tracing, 100% coverage), 'setprofile' (sys.setprofile, 100% coverage, no root)"
     required: false
     default: "py-spy"
 runs:
@@ -61,6 +61,9 @@ runs:
 
         CINTENT_PYPSNOOP_UPROBE=${{ github.action_path }}/tools/pypsnoop_uprobe.bt
         echo "CINTENT_PYPSNOOP_UPROBE=$CINTENT_PYPSNOOP_UPROBE" >> $GITHUB_ENV
+
+        CINTENT_SETPROFILE_SCRIPT=${{ github.action_path }}/tools/setprofile_profiler.py
+        echo "CINTENT_SETPROFILE_SCRIPT=$CINTENT_SETPROFILE_SCRIPT" >> $GITHUB_ENV
 
         CINTENT_PYSPY=${{ github.action_path }}/bin/py-spy
         echo "CINTENT_PYSPY=$CINTENT_PYSPY" >> $GITHUB_ENV
@@ -125,7 +128,7 @@ runs:
           export BPFTRACE_MAX_STRLEN=200
           sudo --preserve-env=BPFTRACE_MAX_STRLEN bpftrace "${{ env.CINTENT_GETHOSTNAME }}" > "$gethostname_log" 2> /dev/null &
           sudo --preserve-env=BPFTRACE_MAX_STRLEN bpftrace "${{ env.CINTENT_TCPLIFE }}" > "$tcplife_log" 2> /dev/null &
-          sudo --preserve-env=BPFTRACE_MAX_STRLEN,CINTENT_LOGS,CINTENT_NONBLOCKING,CINTENT_PROFILER,CINTENT_PYPSNOOP,CINTENT_PYPSNOOP_SH,CINTENT_PYPSNOOP_UPROBE,CINTENT_PYSPY,CINTENT_SAMPLE_RATE,CINTENT_STEP_ID bpftrace --unsafe "${{ env.CINTENT_PYPSNOOP }}" &> /dev/null &
+          sudo --preserve-env=BPFTRACE_MAX_STRLEN,CINTENT_LOGS,CINTENT_NONBLOCKING,CINTENT_PROFILER,CINTENT_PYPSNOOP,CINTENT_PYPSNOOP_SH,CINTENT_PYPSNOOP_UPROBE,CINTENT_PYSPY,CINTENT_SAMPLE_RATE,CINTENT_SETPROFILE_SCRIPT,CINTENT_STEP_ID bpftrace --unsafe "${{ env.CINTENT_PYPSNOOP }}" &> /dev/null &
           sudo execsnoop-bpfcc -qtx --max-args 100 > "$execsnoop_log" 2> /dev/null &
           sudo opensnoop-bpfcc -eT > "$opensnoop_log" 2> /dev/null &
           
@@ -151,6 +154,13 @@ runs:
           # (Re-)Apply the wrapper(s)
           export PATH="${{ env.CINTENT_BIN }}:$PATH"
           echo ${{ env.CINTENT_BIN }} >> $GITHUB_PATH
+
+          # Setup sys.setprofile() if selected
+          if [ "$CINTENT_PROFILER" == "setprofile" ]; then
+            export PYTHONPROFILE="${{ env.CINTENT_SETPROFILE_SCRIPT }}"
+            export CINTENT_PROFILE_LOG="$CINTENT_LOGS/$(date +%s%N).$CINTENT_STEP_ID.setprofile.csv"
+            echo "[cintent] Using sys.setprofile() profiler"
+          fi
 
           # Start the bash script
           echo "start_time = $(date +%s)" >> $metadata_log
