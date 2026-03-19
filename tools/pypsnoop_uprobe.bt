@@ -1,0 +1,56 @@
+#!/usr/bin/env bpftrace
+
+/*
+ * Trace Python function calls using uprobes
+ * Hooks into CPython's frame evaluation function
+ * Outputs CSV format: timestamp,pid,event,function,file,line,duration_ns
+ */
+
+BEGIN
+{
+    printf("timestamp,pid,event,function,file,line,duration_ns\n");
+}
+
+// Hook Python function call (PyEval_EvalFrameEx or _PyEval_EvalFrameDefault)
+uprobe:/usr/bin/python*:PyEval_EvalFrameEx,
+uprobe:/usr/bin/python*:_PyEval_EvalFrameDefault
+{
+    $frame = (struct frame *)arg0;
+    @start[tid] = nsecs;
+    @frame[tid] = $frame;
+
+    // Output function entry
+    printf("%llu,%d,enter,%s,%s,%d,0\n",
+        nsecs,
+        pid,
+        str($frame->f_code->co_name),
+        str($frame->f_code->co_filename),
+        $frame->f_lineno);
+}
+
+// Hook Python function return
+uretprobe:/usr/bin/python*:PyEval_EvalFrameEx,
+uretprobe:/usr/bin/python*:_PyEval_EvalFrameDefault
+/@start[tid]/
+{
+    $duration = nsecs - @start[tid];
+    $frame = @frame[tid];
+
+    // Output function exit with duration
+    printf("%llu,%d,exit,%s,%s,%d,%llu\n",
+        nsecs,
+        pid,
+        str($frame->f_code->co_name),
+        str($frame->f_code->co_filename),
+        $frame->f_lineno,
+        $duration);
+
+    delete(@start[tid]);
+    delete(@frame[tid]);
+}
+
+END
+{
+    clear(@start);
+    clear(@frame);
+}
