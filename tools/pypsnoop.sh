@@ -37,64 +37,114 @@ case "$PROFILER" in
         ;;
 
     "perf")
-        # Linux perf with Python support
-        sudo perf record \
-            -p "$PID" \
-            -F "$RATE" \
-            -g \
-            --call-graph dwarf \
-            -o "$CINTENT_LOGS/$TIMESTAMP.$CINTENT_STEP_ID.perf.data" \
-            &> /dev/null &
+        # Linux perf with Python call-graph recording.
+        # Runs perf record, then converts the binary perf.data to a
+        # speedscope JSON file so the cintent parser can process it.
+        PERF_DATA="$CINTENT_LOGS/$TIMESTAMP.$CINTENT_STEP_ID.perf.data"
+        SPEEDSCOPE_OUT="$CINTENT_LOGS/$TIMESTAMP.$CINTENT_STEP_ID.speedscope.json"
+        ERR_FILE="$CINTENT_LOGS/$TIMESTAMP.$CINTENT_STEP_ID.perf.stderr"
+
+        (
+            # Locate the perf binary (package name varies by kernel version)
+            PERF_BIN=$(command -v perf 2>/dev/null)
+            if [ -z "$PERF_BIN" ]; then
+                PERF_BIN=$(ls /usr/lib/linux-tools/*/perf 2>/dev/null | sort -V | tail -1)
+            fi
+            if [ -z "$PERF_BIN" ]; then
+                echo "[cintent/perf] No perf binary found. Install linux-tools-generic." \
+                    >> "$ERR_FILE"
+                exit 0
+            fi
+
+            # Record until the target process exits
+            sudo "$PERF_BIN" record \
+                -p "$PID" \
+                -F "$RATE" \
+                -g \
+                --call-graph dwarf,65528 \
+                -o "$PERF_DATA" \
+                2>> "$ERR_FILE"
+
+            # Convert binary perf.data -> speedscope JSON
+            if [ -f "$PERF_DATA" ] && [ -s "$PERF_DATA" ]; then
+                PERF_SCRIPT_TXT="$CINTENT_LOGS/$TIMESTAMP.$CINTENT_STEP_ID.perfscript.tmp"
+                sudo "$PERF_BIN" script -i "$PERF_DATA" \
+                    > "$PERF_SCRIPT_TXT" 2>> "$ERR_FILE"
+                python3 "$CINTENT_PERF_TO_SPEEDSCOPE" \
+                    "$PERF_SCRIPT_TXT" "$SPEEDSCOPE_OUT" \
+                    2>> "$ERR_FILE"
+                sudo rm -f "$PERF_DATA" "$PERF_SCRIPT_TXT"
+            else
+                echo "[cintent/perf] perf.data missing or empty after recording." \
+                    >> "$ERR_FILE"
+            fi
+        ) &
         echo $! > "$CINTENT_LOGS/perf_$PID.pid"
         ;;
 
     "uprobe")
-        # eBPF uprobe tracing - captures ALL calls
-        # Detect actual Python binary path from PID
-        PYTHON_BIN=$(readlink -f /proc/$PID/exe)
+        # Python USDT tracing - 100% call coverage via python:function__entry /
+        # python:function__return probes.
+        #
+        # Requirements: Python built with --with-dtrace (Ubuntu 20.04+ default
+        # python3 packages ship with USDT probes compiled in).
+        #
+        # Probe arguments (CPython DTrace probe ABI):
+        #   arg0 = filename (char *)
+        #   arg1 = funcname (char *)
+        #   arg2 = lineno   (int)
+        #
+        # Duration is computed per call using a tid+depth keyed start-time map
+        # so that recursive calls are tracked correctly.
 
-        sudo bpftrace \
-            -o "$CINTENT_LOGS/$TIMESTAMP.$CINTENT_STEP_ID.uprobe.log" \
+        PYTHON_BIN=$(readlink -f /proc/$PID/exe)
+        LOG_FILE="$CINTENT_LOGS/$TIMESTAMP.$CINTENT_STEP_ID.uprobe.log"
+        ERR_FILE="$CINTENT_LOGS/$TIMESTAMP.$CINTENT_STEP_ID.uprobe.stderr"
+
+        sudo --preserve-env=BPFTRACE_MAX_STRLEN \
+            bpftrace \
+            -o "$LOG_FILE" \
             -e "
-            BEGIN { printf(\"timestamp,pid,event,function,file,line,duration_ns\n\"); }
-            uprobe:$PYTHON_BIN:PyEval_EvalFrameEx,
-            uprobe:$PYTHON_BIN:_PyEval_EvalFrameDefault
+            BEGIN {
+                printf(\"timestamp,pid,event,function,file,line,duration_ns\n\");
+            }
+
+            usdt:$PYTHON_BIN:python:function__entry
             {
-                \$frame = (struct frame *)arg0;
-                @start[tid] = nsecs;
-                @frame[tid] = \$frame;
+                @depth[tid]++;
+                @start[tid, @depth[tid]] = nsecs;
                 printf(\"%llu,%d,enter,%s,%s,%d,0\n\",
                     nsecs, pid,
-                    str(\$frame->f_code->co_name),
-                    str(\$frame->f_code->co_filename),
-                    \$frame->f_lineno);
+                    str(arg1),
+                    str(arg0),
+                    (int64)arg2);
             }
-            uretprobe:$PYTHON_BIN:PyEval_EvalFrameEx,
-            uretprobe:$PYTHON_BIN:_PyEval_EvalFrameDefault
-            /@start[tid]/
+
+            usdt:$PYTHON_BIN:python:function__return
             {
-                \$duration = nsecs - @start[tid];
-                \$frame = @frame[tid];
+                \$d = @start[tid, @depth[tid]];
+                \$dur = \$d ? (nsecs - \$d) : 0;
+                delete(@start[tid, @depth[tid]]);
+                if (@depth[tid] > 0) { @depth[tid]--; }
                 printf(\"%llu,%d,exit,%s,%s,%d,%llu\n\",
                     nsecs, pid,
-                    str(\$frame->f_code->co_name),
-                    str(\$frame->f_code->co_filename),
-                    \$frame->f_lineno,
-                    \$duration);
-                delete(@start[tid]);
-                delete(@frame[tid]);
+                    str(arg1),
+                    str(arg0),
+                    (int64)arg2,
+                    \$dur);
             }
-            END { clear(@start); clear(@frame); }
+
+            END { clear(@start); clear(@depth); }
             " \
             -p "$PID" \
-            &> /dev/null &
+            2>> "$ERR_FILE" &
         echo $! > "$CINTENT_LOGS/uprobe_$PID.pid"
         ;;
 
     "setprofile")
-        # sys.setprofile() is enabled via PYTHONPROFILE env var
-        # No need to attach to running process - profiling starts automatically
-        # This case is a no-op since profiling is handled at Python startup
+        # sys.setprofile() is enabled via PYTHONPROFILE env var.
+        # No need to attach to running process - profiling starts automatically.
+        # This case is a no-op since profiling is handled at Python startup.
         echo "[setprofile] Profiling enabled via PYTHONPROFILE for PID $PID" >&2
         ;;
 
