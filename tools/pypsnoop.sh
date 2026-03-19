@@ -8,7 +8,7 @@ if [ "$CINTENT_NONBLOCKING" == "true" ]; then
     --output "$CINTENT_LOGS/$(date +%s%N).$CINTENT_STEP_ID.speedscope.json" \
     --format speedscope \
     --duration unlimited \
-    --rate 10000 \
+    --rate "${CINTENT_SAMPLE_RATE:-1000}" \
     --subprocesses \
     --function \
     --nonblocking \
@@ -20,7 +20,7 @@ else
     --output "$CINTENT_LOGS/$(date +%s%N).$CINTENT_STEP_ID.speedscope.json" \
     --format speedscope \
     --duration unlimited \
-    --rate 10000 \
+    --rate "${CINTENT_SAMPLE_RATE:-1000}" \
     --subprocesses \
     --function \
     > /dev/null &
