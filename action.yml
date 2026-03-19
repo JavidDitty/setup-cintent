@@ -175,11 +175,21 @@ runs:
           export PATH="${{ env.CINTENT_BIN }}:$PATH"
           echo ${{ env.CINTENT_BIN }} >> $GITHUB_PATH
 
-          # Setup sys.setprofile() if selected
+          # Setup sys.setprofile() if selected.
+          # NOTE: PYTHONPROFILE is a Python 2 feature removed in Python 3.
+          # We use sitecustomize.py + PYTHONPATH instead, which Python 3
+          # automatically imports on every interpreter startup.
           if [ "$CINTENT_PROFILER" == "setprofile" ]; then
-            export PYTHONPROFILE="${{ env.CINTENT_SETPROFILE_SCRIPT }}"
+            _cintent_site="$CINTENT_LOGS/_site_$CINTENT_STEP_ID"
+            mkdir -p "$_cintent_site"
+            { printf 'import os, sys\n'
+              printf '_s = os.environ.get("CINTENT_SETPROFILE_SCRIPT", "")\n'
+              printf 'if _s and os.path.isfile(_s): exec(open(_s).read())\n'
+            } > "$_cintent_site/sitecustomize.py"
+            export CINTENT_SETPROFILE_SCRIPT="${{ env.CINTENT_SETPROFILE_SCRIPT }}"
             export CINTENT_PROFILE_LOG="$CINTENT_LOGS/$(date +%s%N).$CINTENT_STEP_ID.setprofile.csv"
-            echo "[cintent] Using sys.setprofile() profiler"
+            export PYTHONPATH="$_cintent_site${PYTHONPATH:+:$PYTHONPATH}"
+            echo "[cintent] Using sys.setprofile() profiler via sitecustomize.py"
           fi
 
           # For uprobe profiler: verify USDT probe arguments are accessible in
@@ -206,9 +216,18 @@ runs:
                 | grep -o '[^ ]*@[^ ]*' | wc -l | tr -d ' ')
             fi
             if [ "${_cintent_usdt_args:-0}" -lt 3 ]; then
-              export PYTHONPROFILE="${{ env.CINTENT_SETPROFILE_SCRIPT }}"
+              # Activate setprofile via sitecustomize.py + PYTHONPATH.
+              # PYTHONPROFILE was a Python 2 feature; Python 3 ignores it.
+              _cintent_site="$CINTENT_LOGS/_site_$CINTENT_STEP_ID"
+              mkdir -p "$_cintent_site"
+              { printf 'import os, sys\n'
+                printf '_s = os.environ.get("CINTENT_SETPROFILE_SCRIPT", "")\n'
+                printf 'if _s and os.path.isfile(_s): exec(open(_s).read())\n'
+              } > "$_cintent_site/sitecustomize.py"
+              export CINTENT_SETPROFILE_SCRIPT="${{ env.CINTENT_SETPROFILE_SCRIPT }}"
               export CINTENT_PROFILE_LOG="$CINTENT_LOGS/$(date +%s%N).$CINTENT_STEP_ID.setprofile.csv"
-              echo "[cintent] uprobe USDT args ${_cintent_usdt_args}/3 in $_cintent_py -- setprofile fallback active" >&2
+              export PYTHONPATH="$_cintent_site${PYTHONPATH:+:$PYTHONPATH}"
+              echo "[cintent] uprobe USDT args ${_cintent_usdt_args}/3 in $_cintent_py -- setprofile fallback via PYTHONPATH active" >&2
             fi
           fi
 
