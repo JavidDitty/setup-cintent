@@ -2,38 +2,69 @@
 
 set -u
 
-PROFILER="${CINTENT_PROFILER:-py-spy}"
+PROFILER_RAW="${CINTENT_PROFILER:-py-spy}"
 RATE="${CINTENT_SAMPLE_RATE:-1000}"
 TIMESTAMP=$(date +%s%N)
 PID="$1"
+CINTENT_SETPROFILE_ACTIVE="${CINTENT_SETPROFILE_ACTIVE:-false}"
+
+normalize_profiler() {
+    case "$(echo "$1" | tr '[:upper:]' '[:lower:]')" in
+        "py-spy"|"py_spy"|"pyspy")
+            echo "py-spy"
+            ;;
+        "perf")
+            echo "perf"
+            ;;
+        "uprobe"|"ebpf"|"usdt")
+            echo "uprobe"
+            ;;
+        "setprofile"|"set_profile"|"set-profile"|"system.profile"|"system_profile"|"system-profile"|"systemprofile"|"sys.setprofile"|"sys_setprofile")
+            echo "setprofile"
+            ;;
+        *)
+            echo ""
+            ;;
+    esac
+}
+
+start_pyspy_record() {
+    if [ "$CINTENT_NONBLOCKING" == "true" ]; then
+        "$CINTENT_PYSPY" record \
+        --pid "$PID" \
+        --full-filenames \
+        --output "$CINTENT_LOGS/$TIMESTAMP.$CINTENT_STEP_ID.speedscope.json" \
+        --format speedscope \
+        --duration unlimited \
+        --rate "$RATE" \
+        --subprocesses \
+        --function \
+        --nonblocking \
+        > /dev/null &
+    else
+        "$CINTENT_PYSPY" record \
+        --pid "$PID" \
+        --full-filenames \
+        --output "$CINTENT_LOGS/$TIMESTAMP.$CINTENT_STEP_ID.speedscope.json" \
+        --format speedscope \
+        --duration unlimited \
+        --rate "$RATE" \
+        --subprocesses \
+        --function \
+        > /dev/null &
+    fi
+}
+
+PROFILER="$(normalize_profiler "$PROFILER_RAW")"
+if [ -z "$PROFILER" ]; then
+    echo "Unknown profiler: $PROFILER_RAW" >&2
+    exit 1
+fi
 
 case "$PROFILER" in
     "py-spy")
         # Original py-spy sampling profiler
-        if [ "$CINTENT_NONBLOCKING" == "true" ]; then
-            "$CINTENT_PYSPY" record \
-            --pid "$PID" \
-            --full-filenames \
-            --output "$CINTENT_LOGS/$TIMESTAMP.$CINTENT_STEP_ID.speedscope.json" \
-            --format speedscope \
-            --duration unlimited \
-            --rate "$RATE" \
-            --subprocesses \
-            --function \
-            --nonblocking \
-            > /dev/null &
-        else
-            "$CINTENT_PYSPY" record \
-            --pid "$PID" \
-            --full-filenames \
-            --output "$CINTENT_LOGS/$TIMESTAMP.$CINTENT_STEP_ID.speedscope.json" \
-            --format speedscope \
-            --duration unlimited \
-            --rate "$RATE" \
-            --subprocesses \
-            --function \
-            > /dev/null &
-        fi
+        start_pyspy_record
         ;;
 
     "perf")
@@ -116,8 +147,14 @@ case "$PROFILER" in
         if [ "${USDT_ARG_COUNT:-0}" -lt 3 ]; then
             echo "[cintent/uprobe] USDT args ${USDT_ARG_COUNT}/3 in $PYTHON_BIN" \
                 >> "$ERR_FILE"
-            echo "[cintent/uprobe] setprofile fallback should be active (set at wrapper startup)" \
+            if [ "$CINTENT_SETPROFILE_ACTIVE" == "true" ]; then
+                echo "[cintent/uprobe] setprofile fallback active; skipping uprobe attach for PID $PID" \
+                    >> "$ERR_FILE"
+                exit 0
+            fi
+            echo "[cintent/uprobe] setprofile fallback not active; using py-spy fallback for PID $PID" \
                 >> "$ERR_FILE"
+            start_pyspy_record
             exit 0
         fi
 
@@ -162,14 +199,14 @@ case "$PROFILER" in
         ;;
 
     "setprofile")
-        # sys.setprofile() is enabled via PYTHONPROFILE env var.
+        # sys.setprofile() is enabled via sitecustomize.py + PYTHONPATH.
         # No need to attach to running process - profiling starts automatically.
         # This case is a no-op since profiling is handled at Python startup.
-        echo "[setprofile] Profiling enabled via PYTHONPROFILE for PID $PID" >&2
+        echo "[setprofile] Profiling enabled via sitecustomize.py for PID $PID" >&2
         ;;
 
     *)
-        echo "Unknown profiler: $PROFILER" >&2
+        echo "Unknown profiler: $PROFILER_RAW" >&2
         exit 1
         ;;
 esac

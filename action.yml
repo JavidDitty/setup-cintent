@@ -47,8 +47,31 @@ runs:
         CINTENT_SAMPLE_RATE=${{ inputs.sample_rate }}
         echo "CINTENT_SAMPLE_RATE=$CINTENT_SAMPLE_RATE" >> $GITHUB_ENV
 
-        CINTENT_PROFILER=${{ inputs.profiler }}
+        CINTENT_PROFILER_INPUT=${{ inputs.profiler }}
+        CINTENT_PROFILER_NORMALIZED=$(echo "$CINTENT_PROFILER_INPUT" | tr '[:upper:]' '[:lower:]')
+        case "$CINTENT_PROFILER_NORMALIZED" in
+          "py-spy"|"py_spy"|"pyspy")
+            CINTENT_PROFILER="py-spy"
+            ;;
+          "perf")
+            CINTENT_PROFILER="perf"
+            ;;
+          "uprobe"|"ebpf"|"usdt")
+            CINTENT_PROFILER="uprobe"
+            ;;
+          "setprofile"|"set_profile"|"set-profile"|"system.profile"|"system_profile"|"system-profile"|"systemprofile"|"sys.setprofile"|"sys_setprofile")
+            CINTENT_PROFILER="setprofile"
+            ;;
+          *)
+            echo "[cintent] Unsupported profiler '$CINTENT_PROFILER_INPUT'." >&2
+            echo "[cintent] Supported values: py-spy, perf, uprobe, setprofile." >&2
+            exit 1
+            ;;
+        esac
+        echo "CINTENT_PROFILER_INPUT=$CINTENT_PROFILER_INPUT" >> $GITHUB_ENV
         echo "CINTENT_PROFILER=$CINTENT_PROFILER" >> $GITHUB_ENV
+        CINTENT_SETPROFILE_ACTIVE=false
+        echo "CINTENT_SETPROFILE_ACTIVE=$CINTENT_SETPROFILE_ACTIVE" >> $GITHUB_ENV
 
         CINTENT_PERF_TO_SPEEDSCOPE=${{ github.action_path }}/tools/perf_to_speedscope.py
         echo "CINTENT_PERF_TO_SPEEDSCOPE=$CINTENT_PERF_TO_SPEEDSCOPE" >> $GITHUB_ENV
@@ -78,7 +101,7 @@ runs:
         echo "CINTENT_TCPLIFE=$CINTENT_TCPLIFE" >> $GITHUB_ENV
 
     - name: Install perf tools
-      if: ${{ runner.os == 'Linux' && inputs.profiler == 'perf' }}
+      if: ${{ runner.os == 'Linux' && env.CINTENT_PROFILER == 'perf' }}
       shell: bash
       run: |
         # Install linux-tools for the running kernel, fall back to generic
@@ -140,6 +163,8 @@ runs:
           "workspace = $GITHUB_WORKSPACE\n"\
           "job_id = $GITHUB_JOB\n"\
           "matrix = $CINTENT_MATRIX\n"\
+          "profiler_requested = $CINTENT_PROFILER_INPUT\n"\
+          "profiler = $CINTENT_PROFILER\n"\
           "step_id = $CINTENT_STEP_ID\n"\
           > "$metadata_log"
           sed -i 's/^[ ]*//' "$metadata_log"
@@ -148,7 +173,7 @@ runs:
           export BPFTRACE_MAX_STRLEN=200
           sudo --preserve-env=BPFTRACE_MAX_STRLEN bpftrace "${{ env.CINTENT_GETHOSTNAME }}" > "$gethostname_log" 2> /dev/null &
           sudo --preserve-env=BPFTRACE_MAX_STRLEN bpftrace "${{ env.CINTENT_TCPLIFE }}" > "$tcplife_log" 2> /dev/null &
-          sudo --preserve-env=BPFTRACE_MAX_STRLEN,CINTENT_LOGS,CINTENT_NONBLOCKING,CINTENT_PERF_TO_SPEEDSCOPE,CINTENT_PROFILER,CINTENT_PYPSNOOP,CINTENT_PYPSNOOP_SH,CINTENT_PYPSNOOP_UPROBE,CINTENT_PYSPY,CINTENT_SAMPLE_RATE,CINTENT_SETPROFILE_SCRIPT,CINTENT_STEP_ID bpftrace --unsafe "${{ env.CINTENT_PYPSNOOP }}" &> /dev/null &
+          sudo --preserve-env=BPFTRACE_MAX_STRLEN,CINTENT_LOGS,CINTENT_NONBLOCKING,CINTENT_PERF_TO_SPEEDSCOPE,CINTENT_PROFILER,CINTENT_PYPSNOOP,CINTENT_PYPSNOOP_SH,CINTENT_PYPSNOOP_UPROBE,CINTENT_PYSPY,CINTENT_SAMPLE_RATE,CINTENT_SETPROFILE_ACTIVE,CINTENT_SETPROFILE_SCRIPT,CINTENT_STEP_ID bpftrace --unsafe "${{ env.CINTENT_PYPSNOOP }}" &> /dev/null &
           sudo execsnoop-bpfcc -qtx --max-args 100 > "$execsnoop_log" 2> /dev/null &
           sudo opensnoop-bpfcc -eT > "$opensnoop_log" 2> /dev/null &
           
@@ -156,17 +181,17 @@ runs:
           timeout_time=60
           start_time=$SECONDS
           current_time=$((SECONDS - start_time))
-          execsnoop_search="TIME(s)\s+PCOMM\s+PID\s+PPID\s+RET\s+ARGS"
-          opensnoop_search="TIME(s)\s+PID\s+COMM\s+FD\s+ERR\s+FLAGS\s+PATH"
-          until grep -q "$execsnoop_search" "$execsnoop_log" && grep -q "$opensnoop_search" "$opensnoop_log" || [[ "$current_time" -gt "$timeout_time" ]]; do
+          execsnoop_search='TIME\(s\)[[:space:]]+PCOMM[[:space:]]+PID[[:space:]]+PPID[[:space:]]+RET[[:space:]]+ARGS'
+          opensnoop_search='TIME\(s\)[[:space:]]+PID[[:space:]]+COMM[[:space:]]+FD[[:space:]]+ERR[[:space:]]+FLAGS[[:space:]]+PATH'
+          until grep -Eq "$execsnoop_search" "$execsnoop_log" && grep -Eq "$opensnoop_search" "$opensnoop_log" || [[ "$current_time" -gt "$timeout_time" ]]; do
             sleep 1
             current_time=$((SECONDS - start_time))
           done
-          if grep -q "$execsnoop_search" "$execsnoop_log"; then
+          if ! grep -Eq "$execsnoop_search" "$execsnoop_log"; then
             echo "execsnoop failed to start!" 1>&2
             exit 1
           fi
-          if grep -q "$opensnoop_search" "$opensnoop_log"; then
+          if ! grep -Eq "$opensnoop_search" "$opensnoop_log"; then
             echo "opensnoop failed to start!" 1>&2
             exit 1
           fi
@@ -179,7 +204,7 @@ runs:
           # NOTE: PYTHONPROFILE is a Python 2 feature removed in Python 3.
           # We use sitecustomize.py + PYTHONPATH instead, which Python 3
           # automatically imports on every interpreter startup.
-          if [ "$CINTENT_PROFILER" == "setprofile" ]; then
+          _cintent_enable_setprofile() {
             _cintent_site="$CINTENT_LOGS/_site_$CINTENT_STEP_ID"
             mkdir -p "$_cintent_site"
             { printf 'import os, sys\n'
@@ -188,7 +213,12 @@ runs:
             } > "$_cintent_site/sitecustomize.py"
             export CINTENT_SETPROFILE_SCRIPT="${{ env.CINTENT_SETPROFILE_SCRIPT }}"
             export CINTENT_PROFILE_LOG="$CINTENT_LOGS/$(date +%s%N).$CINTENT_STEP_ID.setprofile.csv"
+            export CINTENT_SETPROFILE_ACTIVE=true
             export PYTHONPATH="$_cintent_site${PYTHONPATH:+:$PYTHONPATH}"
+          }
+
+          if [ "$CINTENT_PROFILER" == "setprofile" ]; then
+            _cintent_enable_setprofile
             echo "[cintent] Using sys.setprofile() profiler via sitecustomize.py"
           fi
 
@@ -206,28 +236,26 @@ runs:
           # argument descriptors for the function__entry probe.  Each
           # descriptor contains an '@' (e.g. "8@-96(%rbp)"), so we count '@'.
           if [ "$CINTENT_PROFILER" == "uprobe" ]; then
-            _cintent_py=$(readlink -f \
-              "$(command -v python3 2>/dev/null || command -v python 2>/dev/null)" \
-              2>/dev/null)
-            _cintent_usdt_args=0
-            if command -v readelf &>/dev/null && [ -n "$_cintent_py" ] && [ -f "$_cintent_py" ]; then
-              _cintent_usdt_args=$(readelf -n "$_cintent_py" 2>/dev/null \
-                | awk '/Name: function__entry/{found=1} found && /Arguments:/{print; exit}' \
-                | grep -o '[^ ]*@[^ ]*' | wc -l | tr -d ' ')
-            fi
-            if [ "${_cintent_usdt_args:-0}" -lt 3 ]; then
+            _cintent_need_fallback=0
+            for _cintent_cmd in python python3; do
+              _cintent_py=$(readlink -f "$(command -v "$_cintent_cmd" 2>/dev/null)" 2>/dev/null)
+              [ -n "$_cintent_py" ] || continue
+              _cintent_usdt_args=0
+              if command -v readelf &>/dev/null && [ -f "$_cintent_py" ]; then
+                _cintent_usdt_args=$(readelf -n "$_cintent_py" 2>/dev/null \
+                  | awk '/Name: function__entry/{found=1} found && /Arguments:/{print; exit}' \
+                  | grep -o '[^ ]*@[^ ]*' | wc -l | tr -d ' ')
+              fi
+              if [ "${_cintent_usdt_args:-0}" -lt 3 ]; then
+                _cintent_need_fallback=1
+                echo "[cintent] uprobe USDT args ${_cintent_usdt_args}/3 in $_cintent_py" >&2
+              fi
+            done
+            if [ "$_cintent_need_fallback" -eq 1 ]; then
               # Activate setprofile via sitecustomize.py + PYTHONPATH.
               # PYTHONPROFILE was a Python 2 feature; Python 3 ignores it.
-              _cintent_site="$CINTENT_LOGS/_site_$CINTENT_STEP_ID"
-              mkdir -p "$_cintent_site"
-              { printf 'import os, sys\n'
-                printf '_s = os.environ.get("CINTENT_SETPROFILE_SCRIPT", "")\n'
-                printf 'if _s and os.path.isfile(_s): exec(open(_s).read())\n'
-              } > "$_cintent_site/sitecustomize.py"
-              export CINTENT_SETPROFILE_SCRIPT="${{ env.CINTENT_SETPROFILE_SCRIPT }}"
-              export CINTENT_PROFILE_LOG="$CINTENT_LOGS/$(date +%s%N).$CINTENT_STEP_ID.setprofile.csv"
-              export PYTHONPATH="$_cintent_site${PYTHONPATH:+:$PYTHONPATH}"
-              echo "[cintent] uprobe USDT args ${_cintent_usdt_args}/3 in $_cintent_py -- setprofile fallback via PYTHONPATH active" >&2
+              _cintent_enable_setprofile
+              echo "[cintent] uprobe fallback: setprofile via PYTHONPATH active" >&2
             fi
           fi
 
