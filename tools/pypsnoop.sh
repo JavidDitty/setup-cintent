@@ -22,6 +22,9 @@ normalize_profiler() {
         "setprofile"|"set_profile"|"set-profile"|"system.profile"|"system_profile"|"system-profile"|"systemprofile"|"sys.setprofile"|"sys_setprofile")
             echo "setprofile"
             ;;
+        "sysmonitor"|"sys.monitoring"|"sys_monitoring"|"sysmon"|"monitoring"|"pep669")
+            echo "sysmonitor"
+            ;;
         *)
             echo ""
             ;;
@@ -203,6 +206,14 @@ case "$PROFILER" in
         # No need to attach to running process - profiling starts automatically.
         # This case is a no-op since profiling is handled at Python startup.
         echo "[setprofile] Profiling enabled via sitecustomize.py for PID $PID" >&2
+        ;;
+
+    "sysmonitor")
+        # sys.monitoring (PEP 669) is enabled via sitecustomize.py + PYTHONPATH.
+        # No need to attach to running process - profiling starts automatically
+        # when the Python interpreter loads sitecustomize.py.
+        # Falls back to sys.setprofile internally on Python < 3.12.
+        echo "[sysmonitor] Profiling enabled via sitecustomize.py for PID $PID" >&2
         ;;
 
     *)

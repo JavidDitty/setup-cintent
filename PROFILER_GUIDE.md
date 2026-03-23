@@ -1,19 +1,43 @@
 # Profiler Options Guide
 
-CIntent now supports four different profiling backends. Choose based on your needs:
+CIntent now supports five different profiling backends. Choose based on your needs:
 
 ## Profiler Comparison
 
 | Profiler | Coverage | Overhead | Requires Root | Output Format | Best For |
 |----------|----------|----------|---------------|---------------|----------|
-| **py-spy** (default) | ~90-95% | 5-10% | No | speedscope JSON | General use, balanced |
+| **sysmonitor** (default) | 100% | 2-3% | No | CSV trace | **Recommended**: full coverage, low overhead |
+| **py-spy** | ~90-95% | 5-10% | No | speedscope JSON | General use, balanced |
 | **perf** | ~99% | 10-15% | Yes | perf.data | System analysis, detailed |
-| **uprobe** | 100% | 1-3% | Yes | CSV trace | Complete coverage, low overhead |
-| **setprofile** | 100% | 5-8% | No | CSV trace | Complete coverage, no root needed |
+| **uprobe** | 100% | 1-3% | Yes | CSV trace | Complete coverage, eBPF-based |
+| **setprofile** | 100% | 5-8% | No | CSV trace | Complete coverage, legacy fallback |
 
 ## Usage
 
-### py-spy (Default - Sampling)
+### sysmonitor (Default - sys.monitoring PEP 669)
+
+```yaml
+- uses: clonedSemicolon/setup-cintent@main
+  with:
+    profiler: "sysmonitor"
+```
+
+**Pros:**
+- **100% function call coverage** (deterministic, not sampling)
+- **Very low overhead (~2-3%)** — C-level callback dispatch in the interpreter
+- **No root/sudo required**
+- Automatically disables monitoring for non-workspace code objects (zero future cost for stdlib/library calls)
+- Only fires for Python functions (PY_START/PY_RETURN), skips C extension calls
+- Falls back to sys.setprofile on Python < 3.12
+
+**Cons:**
+- Requires Python 3.12+ for full performance benefit (falls back to setprofile otherwise)
+
+**Note:** `sample_rate` is ignored (captures all calls deterministically).
+
+---
+
+### py-spy (Sampling)
 
 ```yaml
 - uses: clonedSemicolon/setup-cintent@main
@@ -87,15 +111,14 @@ timestamp,pid,event,function,file,line,duration_ns
 
 ## Recommendations
 
-### For CI Testing (Default)
+### For CI Testing (Default) ⭐ RECOMMENDED
 ```yaml
 - uses: clonedSemicolon/setup-cintent@main
   with:
-    profiler: "py-spy"
-    sample_rate: "1000"
+    profiler: "sysmonitor"
 ```
 
-### For Maximum Coverage
+### For Maximum Coverage (eBPF, root required)
 ```yaml
 - uses: clonedSemicolon/setup-cintent@main
   with:
@@ -110,6 +133,13 @@ timestamp,pid,event,function,file,line,duration_ns
     sample_rate: "500"
 ```
 
+### For Legacy / Older Python
+```yaml
+- uses: clonedSemicolon/setup-cintent@main
+  with:
+    profiler: "setprofile"
+```
+
 ## Sample Rate Guidelines
 
 For `py-spy` and `perf`:
@@ -122,25 +152,29 @@ For `py-spy` and `perf`:
 
 For `uprobe`: sample_rate is ignored (captures all calls).
 
-### For Maximum Coverage (No Root Required) ⭐ **RECOMMENDED for GitHub Actions**
-```yaml
-- uses: clonedSemicolon/setup-cintent@main
-  with:
-    profiler: "setprofile"
-```
-
 ---
 
-## setprofile (sys.setprofile) - NEW!
+## sysmonitor (sys.monitoring PEP 669) - DEFAULT ⭐
 
-**Uses Python's built-in `sys.setprofile()` for deterministic 100% coverage without needing root access or external tools.**
+**Uses Python 3.12+'s `sys.monitoring` API (PEP 669) for deterministic 100% coverage with very low overhead.**
+
+### Why sysmonitor?
+
+The key innovation is the `DISABLE` mechanism: when the callback sees a non-workspace
+function (stdlib, pip packages, etc.), it returns `sys.monitoring.DISABLE` which
+**permanently removes the callback for that code object**. This means:
+- **First call** to any stdlib function: 1 callback (to classify it)
+- **All subsequent calls**: **zero overhead**
+
+Additionally, `PY_START` / `PY_RETURN` only fire for Python functions — C extension
+calls are skipped entirely.
 
 ### Advantages
 - ✅ **100% function call coverage** (deterministic, not sampling)
-- ✅ **No root/sudo required** (works in restrictive environments)
-- ✅ **Cross-platform** (Linux, macOS, Windows)
+- ✅ **~2-3% overhead** (C-level dispatch + DISABLE optimisation)
+- ✅ **No root/sudo required**
 - ✅ **No external dependencies** (pure Python stdlib)
-- ✅ **~5-8% overhead** (reasonable for CI)
+- ✅ **Automatic fallback** to sys.setprofile on Python < 3.12
 
 ### Output Format
 CSV format: `timestamp_ns,event,function,filename,line`
@@ -151,14 +185,34 @@ CSV format: `timestamp_ns,event,function,filename,line`
 ```
 
 ### When to Use
-- GitHub Actions or CI environments without root
-- Need 100% coverage but uprobe is unavailable
-- Cross-platform profiling (non-Linux)
-- Development/debugging scenarios
+- **Default for all CI profiling** (GitHub Actions, etc.)
+- Need 100% coverage with minimal performance impact
+- Python 3.12+ target projects (best performance)
+- Any environment — no root, no special kernel features required
 
 ---
 
-## Updated Sample Rate Guidelines
+## setprofile (sys.setprofile) - Legacy
+
+**Uses Python's built-in `sys.setprofile()` for deterministic 100% coverage. Superseded by sysmonitor for Python 3.12+.**
+
+### Advantages
+- ✅ **100% function call coverage** (deterministic, not sampling)
+- ✅ **No root/sudo required**
+- ✅ **Cross-platform** (Linux, macOS, Windows)
+- ✅ **Works on all Python versions** (3.6+)
+
+### Disadvantages
+- ⚠️ **~5-8% overhead** — pure-Python callback on every call/return
+- ⚠️ Fires for C calls too (`c_call`, `c_return`), adding unnecessary cost
+
+### When to Use
+- Python < 3.12 targets where sysmonitor is unavailable
+- Cross-platform profiling on older Python
+
+---
+
+## Sample Rate Guidelines
 
 For `py-spy` and `perf` only:
 - **100** - Low overhead, long-running processes
@@ -167,4 +221,4 @@ For `py-spy` and `perf` only:
 - **5000** - High coverage, acceptable overhead
 - **10000** - Maximum coverage, high overhead
 
-For `uprobe` and `setprofile`: sample_rate is ignored (captures all calls).
+For `sysmonitor`, `uprobe`, and `setprofile`: sample_rate is ignored (captures all calls).

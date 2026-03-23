@@ -85,6 +85,7 @@ Only `py-spy` traces were parsing into non-empty `sandwich.csv` / `graph.csv`.
 ## Recommended Profiler Values in Workflow
 
 Use these canonical values in workflow files:
+- `sysmonitor` (default — sys.monitoring PEP 669, 100% coverage, ~2-3% overhead)
 - `py-spy`
 - `perf`
 - `uprobe`

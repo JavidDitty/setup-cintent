@@ -14,9 +14,9 @@ inputs:
     required: false
     default: "1000"
   profiler:
-    description: "Profiler to use: 'py-spy' (sampling, default), 'perf' (system-level sampling), 'uprobe' (eBPF tracing, 100% coverage), 'setprofile' (sys.setprofile, 100% coverage, no root)"
+    description: "Profiler to use: 'sysmonitor' (sys.monitoring PEP 669, 100% coverage, low overhead, default), 'py-spy' (sampling), 'perf' (system-level sampling), 'uprobe' (eBPF tracing, 100% coverage), 'setprofile' (sys.setprofile, 100% coverage, no root)"
     required: false
-    default: "py-spy"
+    default: "sysmonitor"
 runs:
   using: "composite"
   steps:
@@ -62,9 +62,12 @@ runs:
           "setprofile"|"set_profile"|"set-profile"|"system.profile"|"system_profile"|"system-profile"|"systemprofile"|"sys.setprofile"|"sys_setprofile")
             CINTENT_PROFILER="setprofile"
             ;;
+          "sysmonitor"|"sys.monitoring"|"sys_monitoring"|"sysmon"|"monitoring"|"pep669")
+            CINTENT_PROFILER="sysmonitor"
+            ;;
           *)
             echo "[cintent] Unsupported profiler '$CINTENT_PROFILER_INPUT'." >&2
-            echo "[cintent] Supported values: py-spy, perf, uprobe, setprofile." >&2
+            echo "[cintent] Supported values: sysmonitor, py-spy, perf, uprobe, setprofile." >&2
             exit 1
             ;;
         esac
@@ -90,6 +93,9 @@ runs:
 
         CINTENT_SETPROFILE_SCRIPT=${{ github.action_path }}/tools/setprofile_profiler.py
         echo "CINTENT_SETPROFILE_SCRIPT=$CINTENT_SETPROFILE_SCRIPT" >> $GITHUB_ENV
+
+        CINTENT_SYSMONITOR_SCRIPT=${{ github.action_path }}/tools/sysmonitor_profiler.py
+        echo "CINTENT_SYSMONITOR_SCRIPT=$CINTENT_SYSMONITOR_SCRIPT" >> $GITHUB_ENV
 
         CINTENT_PYSPY=${{ github.action_path }}/bin/py-spy
         echo "CINTENT_PYSPY=$CINTENT_PYSPY" >> $GITHUB_ENV
@@ -173,7 +179,7 @@ runs:
           export BPFTRACE_MAX_STRLEN=200
           sudo --preserve-env=BPFTRACE_MAX_STRLEN bpftrace "${{ env.CINTENT_GETHOSTNAME }}" > "$gethostname_log" 2> /dev/null &
           sudo --preserve-env=BPFTRACE_MAX_STRLEN bpftrace "${{ env.CINTENT_TCPLIFE }}" > "$tcplife_log" 2> /dev/null &
-          sudo --preserve-env=BPFTRACE_MAX_STRLEN,CINTENT_LOGS,CINTENT_NONBLOCKING,CINTENT_PERF_TO_SPEEDSCOPE,CINTENT_PROFILER,CINTENT_PYPSNOOP,CINTENT_PYPSNOOP_SH,CINTENT_PYPSNOOP_UPROBE,CINTENT_PYSPY,CINTENT_SAMPLE_RATE,CINTENT_SETPROFILE_ACTIVE,CINTENT_SETPROFILE_SCRIPT,CINTENT_STEP_ID bpftrace --unsafe "${{ env.CINTENT_PYPSNOOP }}" &> /dev/null &
+          sudo --preserve-env=BPFTRACE_MAX_STRLEN,CINTENT_LOGS,CINTENT_NONBLOCKING,CINTENT_PERF_TO_SPEEDSCOPE,CINTENT_PROFILER,CINTENT_PYPSNOOP,CINTENT_PYPSNOOP_SH,CINTENT_PYPSNOOP_UPROBE,CINTENT_PYSPY,CINTENT_SAMPLE_RATE,CINTENT_SETPROFILE_ACTIVE,CINTENT_SETPROFILE_SCRIPT,CINTENT_SYSMONITOR_ACTIVE,CINTENT_SYSMONITOR_SCRIPT,CINTENT_STEP_ID bpftrace --unsafe "${{ env.CINTENT_PYPSNOOP }}" &> /dev/null &
           sudo execsnoop-bpfcc -qtx --max-args 100 > "$execsnoop_log" 2> /dev/null &
           sudo opensnoop-bpfcc -eT > "$opensnoop_log" 2> /dev/null &
           
@@ -220,6 +226,26 @@ runs:
           if [ "$CINTENT_PROFILER" == "setprofile" ]; then
             _cintent_enable_setprofile
             echo "[cintent] Using sys.setprofile() profiler via sitecustomize.py"
+          fi
+
+          # Setup sys.monitoring (PEP 669) if selected.
+          # Uses the same sitecustomize.py + PYTHONPATH injection as setprofile.
+          _cintent_enable_sysmonitor() {
+            _cintent_site="$CINTENT_LOGS/_site_sysmon_$CINTENT_STEP_ID"
+            mkdir -p "$_cintent_site"
+            { printf 'import os, sys\n'
+              printf '_s = os.environ.get("CINTENT_SYSMONITOR_SCRIPT", "")\n'
+              printf 'if _s and os.path.isfile(_s): exec(open(_s).read())\n'
+            } > "$_cintent_site/sitecustomize.py"
+            export CINTENT_SYSMONITOR_SCRIPT="${{ env.CINTENT_SYSMONITOR_SCRIPT }}"
+            export CINTENT_PROFILE_LOG="$CINTENT_LOGS/$(date +%s%N).$CINTENT_STEP_ID.sysmonitor.csv"
+            export CINTENT_SYSMONITOR_ACTIVE=true
+            export PYTHONPATH="$_cintent_site${PYTHONPATH:+:$PYTHONPATH}"
+          }
+
+          if [ "$CINTENT_PROFILER" == "sysmonitor" ]; then
+            _cintent_enable_sysmonitor
+            echo "[cintent] Using sys.monitoring (PEP 669) profiler via sitecustomize.py"
           fi
 
           # For uprobe profiler: verify USDT probe arguments are accessible in
