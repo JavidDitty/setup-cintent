@@ -39,7 +39,8 @@ _call_count = 0
 
 # ── Workspace membership cache ────────────────────────────────────
 # Avoids repeated string prefix checks on the hot path.
-_ws_cache: dict[str, bool] = {}
+# NOTE: no PEP 585 type annotation here — must stay compatible with Python 3.8+
+_ws_cache = {}
 
 
 def _is_workspace(filename: str) -> bool:
