@@ -20,6 +20,7 @@ import sys
 import os
 import time
 import atexit
+import threading
 
 # ── Configuration from environment ────────────────────────────────
 step_id    = os.environ.get('CINTENT_STEP_ID', '0')
@@ -36,6 +37,7 @@ _log = open(log_file, 'w', buffering=8192)
 _log.write("timestamp_ns,event,function,filename,line\n")
 
 _call_count = 0
+_is_shutting_down = False
 
 # ── Workspace membership cache ────────────────────────────────────
 # Avoids repeated string prefix checks on the hot path.
@@ -54,6 +56,15 @@ def _is_workspace(filename: str) -> bool:
 
 # ── Cleanup ───────────────────────────────────────────────────────
 def _cleanup() -> None:
+    global _is_shutting_down
+    _is_shutting_down = True
+    threading.setprofile(None)
+    sys.setprofile(None)
+    if '_TOOL_ID' in globals() and hasattr(sys, 'monitoring'):
+        try:
+            sys.monitoring.set_events(_TOOL_ID, 0)
+        except Exception:
+            pass
     _log.flush()
     _log.close()
     print(
@@ -86,6 +97,8 @@ if hasattr(sys, 'monitoring') and hasattr(sys.monitoring, 'PROFILER_ID'):
     def _py_start(code, instruction_offset):
         """Called on every Python function entry."""
         global _call_count
+        if _is_shutting_down:
+            return DISABLE
         fn = code.co_filename
         if not _is_workspace(fn):
             return DISABLE            # permanently silence this code object
@@ -99,6 +112,8 @@ if hasattr(sys, 'monitoring') and hasattr(sys.monitoring, 'PROFILER_ID'):
     def _py_return(code, instruction_offset, retval):
         """Called on every Python function return."""
         global _call_count
+        if _is_shutting_down:
+            return DISABLE
         fn = code.co_filename
         if not _is_workspace(fn):
             return DISABLE
@@ -133,6 +148,8 @@ else:
 
     def _profile_handler(frame, event, arg):
         global _call_count
+        if _is_shutting_down:
+            return
         if event not in ('call', 'return'):
             return
         filename = frame.f_code.co_filename
@@ -148,6 +165,9 @@ else:
             f"{frame.f_code.co_name},{filename},{frame.f_code.co_firstlineno}\n"
         )
 
+    # Install for current thread and all future threads so callback handlers
+    # executed by framework worker/event-loop threads are captured.
+    threading.setprofile(_profile_handler)
     sys.setprofile(_profile_handler)
     print(
         f"[sysmonitor] sys.setprofile fallback active, logging to {log_file}",
