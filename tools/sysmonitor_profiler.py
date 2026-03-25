@@ -38,6 +38,7 @@ _log.write("timestamp_ns,event,function,filename,line\n")
 
 _call_count = 0
 _is_shutting_down = False
+_write_lock = threading.Lock()
 
 # ── Workspace membership cache ────────────────────────────────────
 # Avoids repeated string prefix checks on the hot path.
@@ -65,8 +66,9 @@ def _cleanup() -> None:
             sys.monitoring.set_events(_TOOL_ID, 0)
         except Exception:
             pass
-    _log.flush()
-    _log.close()
+    with _write_lock:
+        _log.flush()
+        _log.close()
     print(
         f"[sysmonitor] Captured {_call_count} events to {log_file}",
         file=sys.stderr,
@@ -102,12 +104,15 @@ if hasattr(sys, 'monitoring') and hasattr(sys.monitoring, 'PROFILER_ID'):
         fn = code.co_filename
         if not _is_workspace(fn):
             return DISABLE            # permanently silence this code object
-        if _call_count >= _max_calls:
-            return DISABLE
-        _call_count += 1
-        _log.write(
-            f"{_time_ns()},call,{code.co_name},{fn},{code.co_firstlineno}\n"
-        )
+        with _write_lock:
+            if _is_shutting_down:
+                return DISABLE
+            if _call_count >= _max_calls:
+                return DISABLE
+            _call_count += 1
+            _log.write(
+                f"{_time_ns()},call,{code.co_name},{fn},{code.co_firstlineno}\n"
+            )
 
     def _py_return(code, instruction_offset, retval):
         """Called on every Python function return."""
@@ -117,12 +122,15 @@ if hasattr(sys, 'monitoring') and hasattr(sys.monitoring, 'PROFILER_ID'):
         fn = code.co_filename
         if not _is_workspace(fn):
             return DISABLE
-        if _call_count >= _max_calls:
-            return DISABLE
-        _call_count += 1
-        _log.write(
-            f"{_time_ns()},return,{code.co_name},{fn},{code.co_firstlineno}\n"
-        )
+        with _write_lock:
+            if _is_shutting_down:
+                return DISABLE
+            if _call_count >= _max_calls:
+                return DISABLE
+            _call_count += 1
+            _log.write(
+                f"{_time_ns()},return,{code.co_name},{fn},{code.co_firstlineno}\n"
+            )
 
     # Register callbacks and enable events
     sys.monitoring.register_callback(
@@ -157,13 +165,16 @@ else:
             return
         if not _is_workspace(filename):
             return
-        if _call_count >= _max_calls:
-            return
-        _call_count += 1
-        _log.write(
-            f"{time.time_ns()},{event},"
-            f"{frame.f_code.co_name},{filename},{frame.f_code.co_firstlineno}\n"
-        )
+        with _write_lock:
+            if _is_shutting_down:
+                return
+            if _call_count >= _max_calls:
+                return
+            _call_count += 1
+            _log.write(
+                f"{time.time_ns()},{event},"
+                f"{frame.f_code.co_name},{filename},{frame.f_code.co_firstlineno}\n"
+            )
 
     # Install for current thread and all future threads so callback handlers
     # executed by framework worker/event-loop threads are captured.
