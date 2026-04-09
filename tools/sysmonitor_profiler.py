@@ -13,7 +13,7 @@ Falls back to an optimised sys.setprofile on Python < 3.12.
 Injected into target processes via sitecustomize.py + PYTHONPATH (same
 mechanism as the setprofile profiler).
 
-Output CSV: timestamp_ns,event,function,filename,line
+Output CSV: timestamp_ns,thread_id,event,function,filename,line
 """
 
 import sys
@@ -34,23 +34,45 @@ log_file = f"{log_dir}/{_ts}_{_pid}.{step_id}.sysmonitor.csv"
 
 # 8 KB write-buffer — reduces syscall frequency without delaying data
 _log = open(log_file, 'w', buffering=8192)
-_log.write("timestamp_ns,event,function,filename,line\n")
+_log.write("timestamp_ns,thread_id,event,function,filename,line\n")
 
 _call_count = 0
 _is_shutting_down = False
 _write_lock = threading.Lock()
 
+# ── Workspace path prefixes ───────────────────────────────────────
+# The profiler captures events only from files under these prefixes.
+# GITHUB_WORKSPACE covers source files checked out in the repo.
+# CINTENT_PROJECT_PATHS (set by the bash wrapper) covers the same project's
+# packages when installed into site-packages via `pip install .`.
+_ws_prefixes = []
+if _workspace:
+    _ws_prefixes.append(_workspace)
+_extra = os.environ.get('CINTENT_PROJECT_PATHS', '')
+if _extra:
+    for p in _extra.split(os.pathsep):
+        p = p.strip()
+        if p and p not in _ws_prefixes:
+            _ws_prefixes.append(p)
+
+if len(_ws_prefixes) > 1:
+    print(
+        f"[sysmonitor] Workspace prefixes: {_ws_prefixes}",
+        file=sys.stderr,
+    )
+
 # ── Workspace membership cache ────────────────────────────────────
 # Avoids repeated string prefix checks on the hot path.
 # NOTE: no PEP 585 type annotation here — must stay compatible with Python 3.8+
 _ws_cache = {}
+_ws_prefix_tuple = tuple(_ws_prefixes)  # tuple for fast startswith check
 
 
 def _is_workspace(filename: str) -> bool:
     hit = _ws_cache.get(filename)
     if hit is not None:
         return hit
-    result = (not _workspace) or filename.startswith(_workspace)
+    result = bool(_ws_prefix_tuple) and filename.startswith(_ws_prefix_tuple)
     _ws_cache[filename] = result
     return result
 
@@ -95,6 +117,7 @@ if hasattr(sys, 'monitoring') and hasattr(sys.monitoring, 'PROFILER_ID'):
 
     # Bind once to avoid per-call attribute lookups
     _time_ns = time.time_ns
+    _get_ident = threading.get_ident
 
     def _py_start(code, instruction_offset):
         """Called on every Python function entry."""
@@ -111,7 +134,7 @@ if hasattr(sys, 'monitoring') and hasattr(sys.monitoring, 'PROFILER_ID'):
                 return DISABLE
             _call_count += 1
             _log.write(
-                f"{_time_ns()},call,{code.co_name},{fn},{code.co_firstlineno}\n"
+                f"{_time_ns()},{_get_ident()},call,{code.co_name},{fn},{code.co_firstlineno}\n"
             )
 
     def _py_return(code, instruction_offset, retval):
@@ -129,7 +152,7 @@ if hasattr(sys, 'monitoring') and hasattr(sys.monitoring, 'PROFILER_ID'):
                 return DISABLE
             _call_count += 1
             _log.write(
-                f"{_time_ns()},return,{code.co_name},{fn},{code.co_firstlineno}\n"
+                f"{_time_ns()},{_get_ident()},return,{code.co_name},{fn},{code.co_firstlineno}\n"
             )
 
     # Register callbacks and enable events
@@ -172,7 +195,7 @@ else:
                 return
             _call_count += 1
             _log.write(
-                f"{time.time_ns()},{event},"
+                f"{time.time_ns()},{threading.get_ident()},{event},"
                 f"{frame.f_code.co_name},{filename},{frame.f_code.co_firstlineno}\n"
             )
 

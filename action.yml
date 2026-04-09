@@ -241,6 +241,15 @@ runs:
             export CINTENT_PROFILE_LOG="$CINTENT_LOGS/$(date +%s%N).$CINTENT_STEP_ID.sysmonitor.csv"
             export CINTENT_SYSMONITOR_ACTIVE=true
             export PYTHONPATH="$_cintent_site${PYTHONPATH:+:$PYTHONPATH}"
+
+            # Detect site-packages paths for packages installed from the workspace
+            # so the profiler captures project-internal calls (not just files under
+            # GITHUB_WORKSPACE).  Runs once here, result is read by the profiler.
+            _proj_paths=$(python3 "${{ github.action_path }}/tools/detect_project_paths.py" 2>/dev/null || true)
+            if [ -n "$_proj_paths" ]; then
+              export CINTENT_PROJECT_PATHS="$_proj_paths"
+              echo "[cintent] Project paths: $CINTENT_PROJECT_PATHS"
+            fi
           }
 
           if [ "$CINTENT_PROFILER" == "sysmonitor" ]; then

@@ -8,36 +8,26 @@ import sys
 import os
 import time
 import atexit
+import threading
 
 # Get configuration from environment
-step_id  = os.environ.get('CINTENT_STEP_ID', '0')
-log_dir  = os.environ.get('CINTENT_LOGS', '/tmp')
+log_file = os.environ.get('CINTENT_PROFILE_LOG')
+step_id = os.environ.get('CINTENT_STEP_ID', '0')
 
-# Workspace prefix filter – only log calls from files inside the GitHub
-# Actions workspace.  This keeps files small and avoids exhausting the call
-# limit on pytest/stdlib imports before repo code ever runs.
-# GITHUB_WORKSPACE is always set on Actions runners, e.g.
-#   /home/runner/work/graph-012/graph-012
-_workspace = os.environ.get('GITHUB_WORKSPACE', '')
+if not log_file:
+    timestamp = int(time.time() * 1000000000)  # nanoseconds
+    log_dir = os.environ.get('CINTENT_LOGS', '/tmp')
+    log_file = f"{log_dir}/{timestamp}.{step_id}.setprofile.csv"
 
-# Always generate a per-process unique log file using nanosecond timestamp +
-# PID.  Multiple Python processes run concurrently during a test suite (pytest
-# workers, subprocess calls, etc.).  If they all write to a single shared path
-# in 'w' mode they overwrite each other.  Unique filenames ensure every process
-# contributes its own CSV to the artifact, and archive.py picks all of them up.
-_pid = os.getpid()
-_ts  = int(time.time() * 1_000_000_000)
-log_file = f"{log_dir}/{_ts}_{_pid}.{step_id}.setprofile.csv"
-
-# Open log file (always a fresh file for this process)
+# Open log file
 profile_log = open(log_file, 'w')
 profile_log.write("timestamp_ns,event,function,filename,line\n")
 profile_log.flush()
 
 call_count = 0
-# Limit applies only to workspace calls (not filtered-out library calls),
-# so repo-level data is never truncated early.
-max_calls = int(os.environ.get('CINTENT_MAX_CALLS', '5000000'))
+max_calls = int(os.environ.get('CINTENT_MAX_CALLS', '1000000'))  # Limit to prevent huge files
+is_shutting_down = False
+write_lock = threading.Lock()
 
 def profile_handler(frame, event, arg):
     """
@@ -52,45 +42,54 @@ def profile_handler(frame, event, arg):
     """
     global call_count
 
-    if event not in ('call', 'return'):
+    if is_shutting_down:
         return
 
-    filename = frame.f_code.co_filename
-
-    # Skip the profiler script itself
-    if 'setprofile_profiler' in filename:
-        return
-
-    # If we know the workspace, only record calls from repo files.
-    # This avoids spending the limit on pytest / stdlib initialisation.
-    if _workspace and not filename.startswith(_workspace):
-        return
-
-    # Limit total logged calls to prevent giant log files
+    # Limit total calls to prevent giant log files
     if call_count >= max_calls:
         return
 
-    call_count += 1
-    timestamp_ns = int(time.time() * 1_000_000_000)
-    function = frame.f_code.co_name
-    line     = frame.f_lineno
+    # Filter out profiler itself
+    if 'setprofile_profiler' in frame.f_code.co_filename:
+        return
 
-    profile_log.write(f"{timestamp_ns},{event},{function},{filename},{line}\n")
+    # Only log call and return events for Python functions
+    if event in ('call', 'return'):
+        with write_lock:
+            if is_shutting_down:
+                return
+            if call_count >= max_calls:
+                return
+            call_count += 1
+            timestamp_ns = int(time.time() * 1000000000)
+            function = frame.f_code.co_name
+            filename = frame.f_code.co_filename
+            line = frame.f_lineno
 
-    # Flush periodically
-    if call_count % 1000 == 0:
-        profile_log.flush()
+            profile_log.write(f"{timestamp_ns},{event},{function},{filename},{line}\n")
+
+            # Flush periodically
+            if call_count % 1000 == 0:
+                profile_log.flush()
 
 def cleanup():
     """Cleanup on exit"""
-    profile_log.flush()
-    profile_log.close()
+    global is_shutting_down
+    is_shutting_down = True
+    threading.setprofile(None)
+    sys.setprofile(None)
+    with write_lock:
+        profile_log.flush()
+        profile_log.close()
     print(f"[setprofile] Captured {call_count} function calls to {log_file}", file=sys.stderr)
 
 # Register cleanup
 atexit.register(cleanup)
 
-# Install the profiler
+# Install the profiler for the current thread and all future threads.
+# Without threading.setprofile, framework worker threads (where callbacks
+# often run) are invisible to this profiler.
+threading.setprofile(profile_handler)
 sys.setprofile(profile_handler)
 
 print(f"[setprofile] Profiling enabled, logging to {log_file}", file=sys.stderr)
