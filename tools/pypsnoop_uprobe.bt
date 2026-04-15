@@ -1,0 +1,57 @@
+#!/usr/bin/env bpftrace
+
+/*
+ * Trace Python function calls via USDT probes (python:function__entry /
+ * python:function__return).  These are stable DTrace/USDT probes built into
+ * CPython when compiled with --with-dtrace (Ubuntu 20.04+ default packages).
+ *
+ * Outputs CSV:
+ *   timestamp,pid,event,function,file,line,duration_ns
+ *
+ * Probe ABI (CPython):
+ *   arg0 = filename (char *)
+ *   arg1 = funcname (char *)
+ *   arg2 = lineno   (int)
+ *
+ * Duration is tracked per-thread using a depth counter so that recursive
+ * calls are measured independently.
+ *
+ * Usage (attach to an existing Python process):
+ *   sudo bpftrace pypsnoop_uprobe.bt -p <PID>
+ */
+
+BEGIN
+{
+    printf("timestamp,pid,event,function,file,line,duration_ns\n");
+}
+
+usdt:/usr/bin/python3:python:function__entry
+{
+    @depth[tid]++;
+    @start[tid, @depth[tid]] = nsecs;
+    printf("%llu,%d,enter,%s,%s,%d,0\n",
+        nsecs, pid,
+        str(arg1),
+        str(arg0),
+        (int64)arg2);
+}
+
+usdt:/usr/bin/python3:python:function__return
+{
+    $d   = @start[tid, @depth[tid]];
+    $dur = $d ? (nsecs - $d) : 0;
+    delete(@start[tid, @depth[tid]]);
+    if (@depth[tid] > 0) { @depth[tid]--; }
+    printf("%llu,%d,exit,%s,%s,%d,%llu\n",
+        nsecs, pid,
+        str(arg1),
+        str(arg0),
+        (int64)arg2,
+        $dur);
+}
+
+END
+{
+    clear(@start);
+    clear(@depth);
+}
