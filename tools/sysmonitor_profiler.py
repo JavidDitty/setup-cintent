@@ -171,39 +171,44 @@ if hasattr(sys, 'monitoring') and hasattr(sys.monitoring, 'PROFILER_ID'):
         f"[sysmonitor] sys.monitoring active (PEP 669), logging to {log_file}",
         file=sys.stderr,
     )
-
 else:
-    # ╔══════════════════════════════════════════════════════════════╗
-    # ║  Fallback: sys.setprofile — Python < 3.12                  ║
-    # ╚══════════════════════════════════════════════════════════════╝
-
-    def _profile_handler(frame, event, arg):
-        global _call_count
-        if _is_shutting_down:
-            return
-        if event not in ('call', 'return'):
-            return
-        filename = frame.f_code.co_filename
-        if 'sysmonitor_profiler' in filename:
-            return
-        if not _is_workspace(filename):
-            return
-        with _write_lock:
-            if _is_shutting_down:
-                return
-            if _call_count >= _max_calls:
-                return
-            _call_count += 1
-            _log.write(
-                f"{time.time_ns()},{threading.get_ident()},{event},"
-                f"{frame.f_code.co_name},{filename},{frame.f_code.co_firstlineno}\n"
-            )
-
-    # Install for current thread and all future threads so callback handlers
-    # executed by framework worker/event-loop threads are captured.
-    threading.setprofile(_profile_handler)
-    sys.setprofile(_profile_handler)
     print(
-        f"[sysmonitor] sys.setprofile fallback active, logging to {log_file}",
+        f"[sysmonitor] sys.monitoring is not available, logging is disabled (PEP 669)",
         file=sys.stderr,
     )
+
+# else:
+#     # ╔══════════════════════════════════════════════════════════════╗
+#     # ║  Fallback: sys.setprofile — Python < 3.12                  ║
+#     # ╚══════════════════════════════════════════════════════════════╝
+
+#     def _profile_handler(frame, event, arg):
+#         global _call_count
+#         if _is_shutting_down:
+#             return
+#         if event not in ('call', 'return'):
+#             return
+#         filename = frame.f_code.co_filename
+#         if 'sysmonitor_profiler' in filename:
+#             return
+#         if not _is_workspace(filename):
+#             return
+#         with _write_lock:
+#             if _is_shutting_down:
+#                 return
+#             if _call_count >= _max_calls:
+#                 return
+#             _call_count += 1
+#             _log.write(
+#                 f"{time.time_ns()},{threading.get_ident()},{event},"
+#                 f"{frame.f_code.co_name},{filename},{frame.f_code.co_firstlineno}\n"
+#             )
+
+#     # Install for current thread and all future threads so callback handlers
+#     # executed by framework worker/event-loop threads are captured.
+#     threading.setprofile(_profile_handler)
+#     sys.setprofile(_profile_handler)
+#     print(
+#         f"[sysmonitor] sys.setprofile fallback active, logging to {log_file}",
+#         file=sys.stderr,
+#     )

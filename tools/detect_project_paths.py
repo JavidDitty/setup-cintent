@@ -14,10 +14,10 @@ import sys
 
 
 def detect(workspace):
-    try:
-        import importlib.metadata as meta
-    except ImportError:
-        return []
+    try: # For Python >= 3.8
+        import importlib.metadata as metadata 
+    except ImportError: # For Python < 3.8
+        import importlib_metadata as metadata
 
     paths = []
     for dist in meta.distributions():

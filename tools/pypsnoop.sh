@@ -107,7 +107,7 @@ case "$PROFILER" in
                 python3 "$CINTENT_PERF_TO_SPEEDSCOPE" \
                     "$PERF_SCRIPT_TXT" "$SPEEDSCOPE_OUT" \
                     2>> "$ERR_FILE"
-                sudo rm -f "$PERF_DATA" "$PERF_SCRIPT_TXT"
+                # sudo rm -f "$PERF_DATA" "$PERF_SCRIPT_TXT"
             else
                 echo "[cintent/perf] perf.data missing or empty after recording." \
                     >> "$ERR_FILE"

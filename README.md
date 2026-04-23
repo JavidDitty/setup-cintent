@@ -8,7 +8,7 @@ Set up your GitHub Actions workflow for [CIntent](https://github.com/JavidDitty/
 steps:
 - uses: actions/checkout@v4
 
-- uses: JavidDitty/setup-cintent@v1
+- uses: JavidDitty/setup-cintent@main
 
 # Insert your other steps here
 
