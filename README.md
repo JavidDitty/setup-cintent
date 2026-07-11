@@ -26,6 +26,16 @@ steps:
     path: ${{ env.CINTENT_LOGS }}
 ```
 
+This will output an archive (for analysis with `CIntent`) that contains the following files for each encountered execution context:
+
+- `metadata.csv`: Information about the workflow execution context being monitored.
+- `sandwich.csv`: List of all called functions in the context and their runtime information (e.g., duration)
+- `graph.csv`: List of <caller, callee> function pairs in the context and their runtime information (e.g., count)
+- `opensnoop.txt`: open() syscalls executed in the context.
+- `execsnoop.txt`: exec() syscalls executed in the context.
+- `tcplife.txt`: TCP sessions created in the context.
+- `gethostname.txt`: Hostnames of IP addresses encountered in the context.
+
 **Note:** `CIMonitor` must be added *after* [actions/checkout](https://github.com/actions/checkout); your workflow will fail if `CIMonitor` is added before [actions/checkout](https://github.com/actions/checkout) (or if the action is not present). However, any version of [actions/checkout](https://github.com/actions/checkout) or [actions/upload-artifact](https://github.com/actions/upload-artifact) can be used.
 
 ## Acknowledgement
