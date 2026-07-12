@@ -40,4 +40,6 @@ This will output an archive (for analysis with `CIntent`) that contains the foll
 
 ## Acknowledgement
 
+![University of Michigan-Dearborn Logo](./docs/umd_logo.png)
+
 `CIMonitor` was developed for research in the Software Evolution and Maintenance (SEM) Lab at the University of Michigan-Dearborn.
